@@ -114,6 +114,9 @@ int main(int argc, char** argv)
 {
     using namespace std::chrono;
 
+    // 记录程序总开始时间
+    auto program_start = high_resolution_clock::now();
+
     if (argc < 2)
     {
         std::cerr << "Please provide a path to the point cloud file!\n";
@@ -264,6 +267,13 @@ int main(int argc, char** argv)
 
     // 保存质心和位姿
     ShowPointQuat(centroid_point, quat, "cloud_pose");
+
+    // 记录程序总结束时间
+    auto program_end = high_resolution_clock::now();
+    std::cout
+        << "Total program execution time: "
+        << duration_cast<milliseconds>(program_end - program_start).count()
+        << " ms" << std::endl;
 
     return 0;
 }
