@@ -163,14 +163,21 @@ int main(int argc, char** argv)
     ConvertPointCloudToMeters(cloud);
     LOG(INFO) << "Converted point cloud units from mm to meters.";
 
+    // // 计算点云中心点
+    // Eigen::Vector4f centroid;
+    // pcl::compute3DCentroid(*cloud, centroid);
+    // std::cout << "Centroid of point cloud: (" << centroid[0] << ", "
+    //           << centroid[1] << ", " << centroid[2] << ")" << std::endl;
+    // pcl::PointXYZ centroid_point(centroid[0], centroid[1], centroid[2]);
+
     // 体素下采样
     DownsamplePointCloud(cloud, 0.005f);
     // 打印转换后的点云点数
     std::cout << "PointCloud after Downsample: " << cloud->points.size()
               << " points." << std::endl;
     SavePointCloud(cloud, "downsampled_cloud");
-
-    // 计算点云中心点
+    // todo 下采样前还是后计算质心
+    //  计算点云中心点
     Eigen::Vector4f centroid;
     pcl::compute3DCentroid(*cloud, centroid);
     std::cout << "Centroid of point cloud: (" << centroid[0] << ", "
@@ -197,16 +204,19 @@ int main(int argc, char** argv)
     std::cout << "Minor eigenvector: [" << minor_vector[0] << ", "
               << minor_vector[1] << ", " << minor_vector[2] << "]" << std::endl;
     // 验证正交
-    float dot_product_major_middle = major_vector.dot(middle_vector);
-    float dot_product_major_minor  = major_vector.dot(minor_vector);
-    float dot_product_middle_minor = middle_vector.dot(minor_vector);
+    // float dot_product_major_middle = major_vector.dot(middle_vector);
+    // float dot_product_major_minor  = major_vector.dot(minor_vector);
+    // float dot_product_middle_minor = middle_vector.dot(minor_vector);
 
-    std::cout << "Dot product of major and middle: " << dot_product_major_middle
-              << std::endl;
-    std::cout << "Dot product of major and minor: " << dot_product_major_minor
-              << std::endl;
-    std::cout << "Dot product of middle and minor: " << dot_product_middle_minor
-              << std::endl;
+    // std::cout << "Dot product of major and middle: " <<
+    // dot_product_major_middle
+    //           << std::endl;
+    // std::cout << "Dot product of major and minor: " <<
+    // dot_product_major_minor
+    //           << std::endl;
+    // std::cout << "Dot product of middle and minor: " <<
+    // dot_product_middle_minor
+    //           << std::endl;
 
     Eigen::Matrix3f rotation_matrix;
     rotation_matrix.col(0) = major_vector;
