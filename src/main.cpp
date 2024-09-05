@@ -163,12 +163,40 @@ int main(int argc, char** argv)
     ConvertPointCloudToMeters(cloud);
     LOG(INFO) << "Converted point cloud units from mm to meters.";
 
-    // // 计算点云中心点
-    // Eigen::Vector4f centroid;
-    // pcl::compute3DCentroid(*cloud, centroid);
-    // std::cout << "Centroid of point cloud: (" << centroid[0] << ", "
-    //           << centroid[1] << ", " << centroid[2] << ")" << std::endl;
-    // pcl::PointXYZ centroid_point(centroid[0], centroid[1], centroid[2]);
+    // todo 下采样前还是后计算质心
+    // 计算点云中心点
+    Eigen::Vector4f centroid;
+    pcl::compute3DCentroid(*cloud, centroid);
+    std::cout << "Centroid of point cloud: (" << centroid[0] << ", "
+              << centroid[1] << ", " << centroid[2] << ")" << std::endl;
+    pcl::PointXYZ centroid_point(centroid[0], centroid[1], centroid[2]);
+
+    // 设置平面分割器
+    pcl::SACSegmentation<pcl::PointXYZ> seg;
+    pcl::PointIndices::Ptr inliers(new pcl::PointIndices);
+    pcl::ModelCoefficients::Ptr coefficients(new pcl::ModelCoefficients);
+    seg.setOptimizeCoefficients(true);
+    seg.setModelType(pcl::SACMODEL_PLANE);
+    seg.setMethodType(pcl::SAC_RANSAC);
+    seg.setDistanceThreshold(0.01);
+
+    seg.setInputCloud(cloud);
+    seg.segment(*inliers, *coefficients);
+
+    if (inliers->indices.size() == 0)
+    {
+        PCL_ERROR("Could not estimate a planar model for the given dataset.");
+        return -1;
+    }
+
+    // 打印平面模型
+    std::cout << "Model coefficients: ";
+    for (auto val : coefficients->values) std::cout << val << " ";
+    std::cout << std::endl;
+
+    // 计算质心到拟合平面的距离
+    double distance = computePointToPlaneDistance(centroid, coefficients);
+    std::cout << "Distance from centroid to plane: " << distance << std::endl;
 
     // 体素下采样
     DownsamplePointCloud(cloud, 0.005f);
@@ -176,13 +204,6 @@ int main(int argc, char** argv)
     std::cout << "PointCloud after Downsample: " << cloud->points.size()
               << " points." << std::endl;
     SavePointCloud(cloud, "downsampled_cloud");
-    // todo 下采样前还是后计算质心
-    //  计算点云中心点
-    Eigen::Vector4f centroid;
-    pcl::compute3DCentroid(*cloud, centroid);
-    std::cout << "Centroid of point cloud: (" << centroid[0] << ", "
-              << centroid[1] << ", " << centroid[2] << ")" << std::endl;
-    pcl::PointXYZ centroid_point(centroid[0], centroid[1], centroid[2]);
 
     // 使用 MomentOfInertiaEstimation 计算特征向量
     pcl::MomentOfInertiaEstimation<pcl::PointXYZ> feature_extractor;
