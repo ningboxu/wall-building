@@ -108,10 +108,6 @@ int main(int argc, char** argv)
     ConvertPointCloudToMeters(cloud);
     LOG(INFO) << "Converted point cloud units from mm to meters.";
 
-    // 打印转换后的点云点数
-    std::cout << "PointCloud after conversion: " << cloud->points.size()
-              << " points." << std::endl;
-
     // 计算点云中心点
     Eigen::Vector4f centroid;
     pcl::compute3DCentroid(*cloud, centroid);
@@ -147,6 +143,9 @@ int main(int argc, char** argv)
 
     // 体素下采样
     DownsamplePointCloud(cloud, 0.01f);
+    // 打印转换后的点云点数
+    std::cout << "PointCloud after Downsample: " << cloud->points.size()
+              << " points." << std::endl;
 
     // 使用 MomentOfInertiaEstimation 计算特征向量
     pcl::MomentOfInertiaEstimation<pcl::PointXYZ> feature_extractor;
