@@ -267,31 +267,43 @@ int main(int argc, char** argv)
     Eigen::Quaternionf quat(rotation_matrix);
 
     // 保存质心和位姿
-    ShowPointQuat(centroid_point, quat, "cloud_pose");
+    ShowPointQuat(centroid_point, quat, "pose_camera");
 
     // 手眼标定结果
-    Eigen::Quaternionf q(1, 0, 0, 0);
-    Eigen::Vector3f t(0, 0, 0);
-
+    // Eigen::Quaternionf q(1, 0, 0, 0);
+    // Eigen::Vector3f t(0, 0, 0);
+    Eigen::Quaternionf q(-0.01365, 0.64175, 0.7665, -0.0196);
+    Eigen::Vector3f t(0.4, 0.5, 1);
+    // 变换矩阵
     Eigen::Isometry3f camera_calibrate_ = Eigen::Isometry3f::Identity();
-    camera_calibrate_.rotate(q);        // 手眼标定的旋转
-    camera_calibrate_.pretranslate(t);  // 手眼标定的平移
+    camera_calibrate_.rotate(q);
+    camera_calibrate_.pretranslate(t);
 
-    // 计算基坐标系下的质心
+    // 在base下的质心和位姿
     Eigen::Vector3f centroid_base =
-        camera_calibrate_ * centroid_vec;  // 质心转换
-
-    // 将旋转矩阵转换为四元数
-    Eigen::Quaternionf rotation_quat(
-        camera_calibrate_.rotation());  // 将旋转矩阵转换为四元数
-    Eigen::Quaternionf quat_base = rotation_quat * quat;  // 姿态转换
+        camera_calibrate_ * centroid_vec;     // 质心转换
+    Eigen::Quaternionf quat_base = q * quat;  // 姿态转换
 
     // 输出结果
     std::cout << "Base coordinate system position: "
               << centroid_base.transpose() << std::endl;
     std::cout << "Base coordinate system orientation (quaternion): "
               << quat_base.coeffs().transpose() << std::endl;
+    pcl::PointXYZ centroid_p_base(centroid_base[0], centroid_base[1],
+                                  centroid_base[2]);
+    ShowPointQuat(centroid_p_base, quat_base, "pose_base");
 
+    // cloud_in_base(下采样后)
+    pcl::PointCloud<pcl::PointXYZ>::Ptr cloud_in_base(
+        new pcl::PointCloud<pcl::PointXYZ>);
+    pcl::transformPointCloud(*cloud, *cloud_in_base,
+                             camera_calibrate_.cast<float>());
+    cloud_in_base->width  = cloud_in_base->size();
+    cloud_in_base->height = 1;
+    LOG(INFO) << "cloud_in_base->points.size: " << cloud_in_base->points.size();
+    std::cout << " cloud_in_base->points.size: " << cloud_in_base->points.size()
+              << std::endl;
+    SavePointCloud(cloud_in_base, "cloud_in_base");
     // 记录程序总结束时间
     auto program_end = high_resolution_clock::now();
     std::cout
