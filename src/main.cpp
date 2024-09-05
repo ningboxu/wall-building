@@ -283,6 +283,8 @@ int main(int argc, char** argv)
     Eigen::Vector3f centroid_base =
         camera_calibrate_ * centroid_vec;     // 质心转换
     Eigen::Quaternionf quat_base = q * quat;  // 姿态转换
+    std::cout << "camera_calibrate_ matrix:" << std::endl;
+    std::cout << camera_calibrate_.matrix() << std::endl;
 
     // 输出结果
     std::cout << "Base coordinate system position: "
