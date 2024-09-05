@@ -16,7 +16,7 @@ include_directories(${EIGEN3_INCLUDE_DIR})
 include_directories(include)
 
 # 添加可执行文件和源文件
-add_executable(main src/main.cpp)
+add_executable(main src/main.cpp  src/utils.cpp)
 
 # 链接PCL和glog库
 target_link_libraries(main ${PCL_LIBRARIES} glog)

@@ -11,6 +11,8 @@
 #include <cmath>  // 用于计算平方根等数学操作
 #include <iostream>
 
+#include "utils.h"
+
 // 将点云单位从mm转换为m
 void ConvertPointCloudToMeters(pcl::PointCloud<pcl::PointXYZ>::Ptr& cloud)
 {
@@ -166,7 +168,7 @@ int main(int argc, char** argv)
     // 打印转换后的点云点数
     std::cout << "PointCloud after Downsample: " << cloud->points.size()
               << " points." << std::endl;
-
+    SavePointCloud(cloud, "downsampled_cloud");
     // 计算点云中心点
     Eigen::Vector4f centroid;
     pcl::compute3DCentroid(*cloud, centroid);
@@ -193,9 +195,10 @@ int main(int argc, char** argv)
     std::cout << "Minor eigenvector: [" << minor_vector[0] << ", "
               << minor_vector[1] << ", " << minor_vector[2] << "]" << std::endl;
 
-    // 可视化结果
-    visualizePointCloudWithVectors(cloud, centroid, major_vector, middle_vector,
-                                   minor_vector);
+    // // 可视化结果
+    // visualizePointCloudWithVectors(cloud, centroid, major_vector,
+    // middle_vector,
+    //                                minor_vector);
 
     return 0;
 }
