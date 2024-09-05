@@ -8,6 +8,7 @@
 #include <pcl/point_types.h>
 #include <pcl/segmentation/sac_segmentation.h>
 #include <pcl/visualization/pcl_visualizer.h>  // 用于可视化
+#include <chrono>                              // 用于统计时间
 #include <cmath>  // 用于计算平方根等数学操作
 #include <iostream>
 
@@ -111,6 +112,8 @@ void visualizePointCloudWithVectors(pcl::PointCloud<pcl::PointXYZ>::Ptr& cloud,
 
 int main(int argc, char** argv)
 {
+    using namespace std::chrono;
+
     if (argc < 2)
     {
         std::cerr << "Please provide a path to the point cloud file!\n";
@@ -127,6 +130,7 @@ int main(int argc, char** argv)
     FLAGS_log_dir          = "./";
 
     // 加载点云数据
+    auto start_load = high_resolution_clock::now();  // 记录开始时间
     pcl::PointCloud<pcl::PointXYZ>::Ptr cloud(
         new pcl::PointCloud<pcl::PointXYZ>);
     if (file_path.substr(file_path.find_last_of(".") + 1) == "pcd")
@@ -152,18 +156,27 @@ int main(int argc, char** argv)
             << "Unsupported file format! Supported formats are PCD and PLY.\n";
         return -1;
     }
-
+    auto end_load = high_resolution_clock::now();  // 记录结束时间
     LOG(INFO) << "Loaded " << cloud->width * cloud->height
               << " data points from " << file_path;
+    std::cout << "Loading time: "
+              << duration_cast<milliseconds>(end_load - start_load).count()
+              << " ms" << std::endl;
+
     // 打印加载的点云点数
     std::cout << "PointCloud before conversion: " << cloud->points.size()
               << " points." << std::endl;
 
     // 将点云单位从毫米转换为米
+    auto start_convert = high_resolution_clock::now();  // 记录开始时间
     ConvertPointCloudToMeters(cloud);
     LOG(INFO) << "Converted point cloud units from mm to meters.";
+    auto end_convert = high_resolution_clock::now();  // 记录结束时间
+    std::cout
+        << "Conversion time: "
+        << duration_cast<milliseconds>(end_convert - start_convert).count()
+        << " ms" << std::endl;
 
-    // todo 下采样前还是后计算质心
     // 计算点云中心点
     Eigen::Vector4f centroid;
     pcl::compute3DCentroid(*cloud, centroid);
@@ -172,6 +185,7 @@ int main(int argc, char** argv)
     pcl::PointXYZ centroid_point(centroid[0], centroid[1], centroid[2]);
 
     // 设置平面分割器
+    auto start_seg = high_resolution_clock::now();  // 记录开始时间
     pcl::SACSegmentation<pcl::PointXYZ> seg;
     pcl::PointIndices::Ptr inliers(new pcl::PointIndices);
     pcl::ModelCoefficients::Ptr coefficients(new pcl::ModelCoefficients);
@@ -182,12 +196,17 @@ int main(int argc, char** argv)
 
     seg.setInputCloud(cloud);
     seg.segment(*inliers, *coefficients);
+    auto end_seg = high_resolution_clock::now();  // 记录结束时间
 
     if (inliers->indices.size() == 0)
     {
         PCL_ERROR("Could not estimate a planar model for the given dataset.");
         return -1;
     }
+
+    std::cout << "Segmentation time: "
+              << duration_cast<milliseconds>(end_seg - start_seg).count()
+              << " ms" << std::endl;
 
     // 打印平面模型
     std::cout << "Model coefficients: ";
@@ -199,13 +218,19 @@ int main(int argc, char** argv)
     std::cout << "Distance from centroid to plane: " << distance << std::endl;
 
     // 体素下采样
+    auto start_downsample = high_resolution_clock::now();  // 记录开始时间
     DownsamplePointCloud(cloud, 0.005f);
-    // 打印转换后的点云点数
     std::cout << "PointCloud after Downsample: " << cloud->points.size()
               << " points." << std::endl;
     SavePointCloud(cloud, "downsampled_cloud");
+    auto end_downsample = high_resolution_clock::now();  // 记录结束时间
+    std::cout << "Downsampling time: "
+              << duration_cast<milliseconds>(end_downsample - start_downsample)
+                     .count()
+              << " ms" << std::endl;
 
     // 使用 MomentOfInertiaEstimation 计算特征向量
+    auto start_features = high_resolution_clock::now();  // 记录开始时间
     pcl::MomentOfInertiaEstimation<pcl::PointXYZ> feature_extractor;
     feature_extractor.setInputCloud(cloud);
     feature_extractor.compute();
@@ -213,6 +238,12 @@ int main(int argc, char** argv)
     Eigen::Vector3f major_vector, middle_vector, minor_vector;
     feature_extractor.getEigenVectors(major_vector, middle_vector,
                                       minor_vector);
+    auto end_features = high_resolution_clock::now();  // 记录结束时间
+
+    std::cout
+        << "Feature extraction time: "
+        << duration_cast<milliseconds>(end_features - start_features).count()
+        << " ms" << std::endl;
 
     // 打印主方向的特征向量
     std::cout << "Major eigenvector: [" << major_vector[0] << ", "
@@ -224,36 +255,15 @@ int main(int argc, char** argv)
 
     std::cout << "Minor eigenvector: [" << minor_vector[0] << ", "
               << minor_vector[1] << ", " << minor_vector[2] << "]" << std::endl;
-    // 验证正交
-    // float dot_product_major_middle = major_vector.dot(middle_vector);
-    // float dot_product_major_minor  = major_vector.dot(minor_vector);
-    // float dot_product_middle_minor = middle_vector.dot(minor_vector);
-
-    // std::cout << "Dot product of major and middle: " <<
-    // dot_product_major_middle
-    //           << std::endl;
-    // std::cout << "Dot product of major and minor: " <<
-    // dot_product_major_minor
-    //           << std::endl;
-    // std::cout << "Dot product of middle and minor: " <<
-    // dot_product_middle_minor
-    //           << std::endl;
 
     Eigen::Matrix3f rotation_matrix;
     rotation_matrix.col(0) = major_vector;
     rotation_matrix.col(1) = middle_vector;
     rotation_matrix.col(2) = minor_vector;
     Eigen::Quaternionf quat(rotation_matrix);
-    // todo 不全用特征向量来表示位姿
-    // 如使用拟合平面法向量、major_vector,另一个方向叉乘
 
     // 保存质心和位姿
     ShowPointQuat(centroid_point, quat, "cloud_pose");
-
-    // // 可视化结果
-    // visualizePointCloudWithVectors(cloud, centroid, major_vector,
-    // middle_vector,
-    //                                minor_vector);
 
     return 0;
 }
