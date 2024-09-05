@@ -7,6 +7,7 @@
 #include <pcl/point_cloud.h>
 #include <pcl/point_types.h>
 #include <pcl/segmentation/sac_segmentation.h>
+#include <pcl/visualization/pcl_visualizer.h>  // 用于可视化
 #include <cmath>  // 用于计算平方根等数学操作
 #include <iostream>
 
@@ -54,6 +55,58 @@ void DownsamplePointCloud(pcl::PointCloud<pcl::PointXYZ>::Ptr& cloud,
     sor.filter(*cloud_filtered);
     cloud = cloud_filtered;
 }
+
+void visualizePointCloudWithVectors(pcl::PointCloud<pcl::PointXYZ>::Ptr& cloud,
+                                    const Eigen::Vector4f& centroid,
+                                    const Eigen::Vector3f& major_vector,
+                                    const Eigen::Vector3f& middle_vector,
+                                    const Eigen::Vector3f& minor_vector)
+{
+    // 创建可视化窗口
+    pcl::visualization::PCLVisualizer::Ptr viewer(
+        new pcl::visualization::PCLVisualizer("3D Viewer"));
+    viewer->setBackgroundColor(0, 0, 0);  // 设置背景颜色为黑色
+
+    // 将点云添加到可视化窗口
+    pcl::visualization::PointCloudColorHandlerCustom<pcl::PointXYZ> cloud_color(
+        cloud, 255, 255, 255);  // 白色点云
+    viewer->addPointCloud<pcl::PointXYZ>(cloud, cloud_color, "sample cloud");
+
+    // 绘制质心
+    pcl::PointXYZ centroid_point(centroid[0], centroid[1], centroid[2]);
+    viewer->addSphere(centroid_point, 0.02, 1.0, 0.0, 0.0,
+                      "centroid");  // 用红色球体表示质心
+
+    // 绘制三个特征向量
+    pcl::PointXYZ major_end(centroid[0] + major_vector[0],
+                            centroid[1] + major_vector[1],
+                            centroid[2] + major_vector[2]);
+    pcl::PointXYZ middle_end(centroid[0] + middle_vector[0],
+                             centroid[1] + middle_vector[1],
+                             centroid[2] + middle_vector[2]);
+    pcl::PointXYZ minor_end(centroid[0] + minor_vector[0],
+                            centroid[1] + minor_vector[1],
+                            centroid[2] + minor_vector[2]);
+
+    // 用线表示特征向量
+    viewer->addLine(centroid_point, major_end, 1.0, 0.0, 0.0,
+                    "major_vector");  // 红色线表示主方向
+    viewer->addLine(centroid_point, middle_end, 0.0, 1.0, 0.0,
+                    "middle_vector");  // 绿色线表示中方向
+    viewer->addLine(centroid_point, minor_end, 0.0, 0.0, 1.0,
+                    "minor_vector");  // 蓝色线表示次方向
+
+    // 设置点云的大小
+    viewer->setPointCloudRenderingProperties(
+        pcl::visualization::PCL_VISUALIZER_POINT_SIZE, 1, "sample cloud");
+
+    // 启动可视化循环
+    while (!viewer->wasStopped())
+    {
+        viewer->spinOnce(100);
+    }
+}
+
 int main(int argc, char** argv)
 {
     if (argc < 2)
@@ -108,44 +161,17 @@ int main(int argc, char** argv)
     ConvertPointCloudToMeters(cloud);
     LOG(INFO) << "Converted point cloud units from mm to meters.";
 
+    // 体素下采样
+    DownsamplePointCloud(cloud, 0.005f);
+    // 打印转换后的点云点数
+    std::cout << "PointCloud after Downsample: " << cloud->points.size()
+              << " points." << std::endl;
+
     // 计算点云中心点
     Eigen::Vector4f centroid;
     pcl::compute3DCentroid(*cloud, centroid);
     std::cout << "Centroid of point cloud: (" << centroid[0] << ", "
               << centroid[1] << ", " << centroid[2] << ")" << std::endl;
-
-    // 设置平面分割器
-    pcl::SACSegmentation<pcl::PointXYZ> seg;
-    pcl::PointIndices::Ptr inliers(new pcl::PointIndices);
-    pcl::ModelCoefficients::Ptr coefficients(new pcl::ModelCoefficients);
-    seg.setOptimizeCoefficients(true);
-    seg.setModelType(pcl::SACMODEL_PLANE);
-    seg.setMethodType(pcl::SAC_RANSAC);
-    seg.setDistanceThreshold(0.01);
-
-    seg.setInputCloud(cloud);
-    seg.segment(*inliers, *coefficients);
-
-    if (inliers->indices.size() == 0)
-    {
-        PCL_ERROR("Could not estimate a planar model for the given dataset.");
-        return -1;
-    }
-
-    // 打印平面模型
-    std::cout << "Model coefficients: ";
-    for (auto val : coefficients->values) std::cout << val << " ";
-    std::cout << std::endl;
-
-    // 计算质心到拟合平面的距离
-    double distance = computePointToPlaneDistance(centroid, coefficients);
-    std::cout << "Distance from centroid to plane: " << distance << std::endl;
-
-    // 体素下采样
-    DownsamplePointCloud(cloud, 0.01f);
-    // 打印转换后的点云点数
-    std::cout << "PointCloud after Downsample: " << cloud->points.size()
-              << " points." << std::endl;
 
     // 使用 MomentOfInertiaEstimation 计算特征向量
     pcl::MomentOfInertiaEstimation<pcl::PointXYZ> feature_extractor;
@@ -166,6 +192,10 @@ int main(int argc, char** argv)
 
     std::cout << "Minor eigenvector: [" << minor_vector[0] << ", "
               << minor_vector[1] << ", " << minor_vector[2] << "]" << std::endl;
+
+    // 可视化结果
+    visualizePointCloudWithVectors(cloud, centroid, major_vector, middle_vector,
+                                   minor_vector);
 
     return 0;
 }
