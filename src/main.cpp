@@ -8,10 +8,10 @@
 #include <pcl/point_types.h>
 #include <pcl/segmentation/sac_segmentation.h>
 #include <pcl/visualization/pcl_visualizer.h>  // 用于可视化
-#include <chrono>                              // 用于统计时间
-#include <cmath>  // 用于计算平方根等数学操作
+#include <Eigen/Geometry>
+#include <chrono>  // 用于统计时间
+#include <cmath>   // 用于计算平方根等数学操作
 #include <iostream>
-
 #include "utils.h"
 
 // 将点云单位从mm转换为m
@@ -185,6 +185,7 @@ int main(int argc, char** argv)
     pcl::compute3DCentroid(*cloud, centroid);
     std::cout << "Centroid of point cloud: (" << centroid[0] << ", "
               << centroid[1] << ", " << centroid[2] << ")" << std::endl;
+    Eigen::Vector3f centroid_vec(centroid[0], centroid[1], centroid[2]);
     pcl::PointXYZ centroid_point(centroid[0], centroid[1], centroid[2]);
 
     // 设置平面分割器
@@ -267,6 +268,29 @@ int main(int argc, char** argv)
 
     // 保存质心和位姿
     ShowPointQuat(centroid_point, quat, "cloud_pose");
+
+    // 手眼标定结果
+    Eigen::Quaternionf q(1, 0, 0, 0);
+    Eigen::Vector3f t(0, 0, 0);
+
+    Eigen::Isometry3f camera_calibrate_ = Eigen::Isometry3f::Identity();
+    camera_calibrate_.rotate(q);        // 手眼标定的旋转
+    camera_calibrate_.pretranslate(t);  // 手眼标定的平移
+
+    // 计算基坐标系下的质心
+    Eigen::Vector3f centroid_base =
+        camera_calibrate_ * centroid_vec;  // 质心转换
+
+    // 将旋转矩阵转换为四元数
+    Eigen::Quaternionf rotation_quat(
+        camera_calibrate_.rotation());  // 将旋转矩阵转换为四元数
+    Eigen::Quaternionf quat_base = rotation_quat * quat;  // 姿态转换
+
+    // 输出结果
+    std::cout << "Base coordinate system position: "
+              << centroid_base.transpose() << std::endl;
+    std::cout << "Base coordinate system orientation (quaternion): "
+              << quat_base.coeffs().transpose() << std::endl;
 
     // 记录程序总结束时间
     auto program_end = high_resolution_clock::now();
