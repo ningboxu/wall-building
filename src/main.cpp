@@ -1,6 +1,7 @@
 #include <glog/logging.h>
 #include <pcl/common/centroid.h>  // 用于计算点云的质心
 #include <pcl/features/moment_of_inertia_estimation.h>  // 用于计算点云的特征信息
+#include <pcl/filters/voxel_grid.h>
 #include <pcl/io/pcd_io.h>
 #include <pcl/io/ply_io.h>
 #include <pcl/point_cloud.h>
@@ -42,6 +43,17 @@ double computePointToPlaneDistance(
     return numerator / denominator;
 }
 
+void DownsamplePointCloud(pcl::PointCloud<pcl::PointXYZ>::Ptr& cloud,
+                          float leaf_size)
+{
+    pcl::VoxelGrid<pcl::PointXYZ> sor;
+    sor.setInputCloud(cloud);
+    sor.setLeafSize(leaf_size, leaf_size, leaf_size);
+    pcl::PointCloud<pcl::PointXYZ>::Ptr cloud_filtered(
+        new pcl::PointCloud<pcl::PointXYZ>);
+    sor.filter(*cloud_filtered);
+    cloud = cloud_filtered;
+}
 int main(int argc, char** argv)
 {
     if (argc < 2)
@@ -132,6 +144,29 @@ int main(int argc, char** argv)
     // 计算质心到拟合平面的距离
     double distance = computePointToPlaneDistance(centroid, coefficients);
     std::cout << "Distance from centroid to plane: " << distance << std::endl;
+
+    // 体素下采样
+    DownsamplePointCloud(cloud, 0.01f);
+
+    // 使用 MomentOfInertiaEstimation 计算特征向量
+    pcl::MomentOfInertiaEstimation<pcl::PointXYZ> feature_extractor;
+    feature_extractor.setInputCloud(cloud);
+    feature_extractor.compute();
+
+    Eigen::Vector3f major_vector, middle_vector, minor_vector;
+    feature_extractor.getEigenVectors(major_vector, middle_vector,
+                                      minor_vector);
+
+    // 打印主方向的特征向量
+    std::cout << "Major eigenvector: [" << major_vector[0] << ", "
+              << major_vector[1] << ", " << major_vector[2] << "]" << std::endl;
+
+    std::cout << "Middle eigenvector: [" << middle_vector[0] << ", "
+              << middle_vector[1] << ", " << middle_vector[2] << "]"
+              << std::endl;
+
+    std::cout << "Minor eigenvector: [" << minor_vector[0] << ", "
+              << minor_vector[1] << ", " << minor_vector[2] << "]" << std::endl;
 
     return 0;
 }
