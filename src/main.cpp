@@ -134,7 +134,7 @@ int main(int argc, char** argv)
     seg.setOptimizeCoefficients(true);
     seg.setModelType(pcl::SACMODEL_PLANE);
     seg.setMethodType(pcl::SAC_RANSAC);
-    seg.setDistanceThreshold(0.01);
+    seg.setDistanceThreshold(0.001);
 
     seg.setInputCloud(cloud);
     seg.segment(*inliers, *coefficients);
@@ -154,10 +154,13 @@ int main(int argc, char** argv)
     std::cout << "Model coefficients: ";
     for (auto val : coefficients->values) std::cout << val << " ";
     std::cout << std::endl;
-
+// todo  有问题
 #ifdef OUTPUT_RESULTS
-    ShowPlane(coefficients, "coefficients", centroid_point.x - 0.05,
-              centroid_point.y - 0.12, 0.35, 1.4, 1);
+
+    Eigen::Vector3f normal(coefficients->values[0], coefficients->values[1],
+                           coefficients->values[2]);
+    ShowPlane(centroid_point, coefficients, "coefficients", 1.0f, 100);
+    ShowVector(normal, "normal", centroid_vec, 1.0f);
 #endif
 
     // 计算质心到拟合平面的距离
@@ -215,8 +218,14 @@ int main(int argc, char** argv)
     // 手眼标定结果
     // Eigen::Quaternionf q(1, 0, 0, 0);
     // Eigen::Vector3f t(0, 0, 0);
-    Eigen::Quaternionf q(-0.01365, 0.64175, 0.7665, -0.0196);
-    Eigen::Vector3f t(0.4, 0.5, 1);
+    // Eigen::Quaternionf q(-0.01365, 0.64175, 0.7665, -0.0196);
+    // Eigen::Vector3f t(0.4, 0.5, 1);
+    //! camera2tool?
+    // Eigen::Quaternionf q(0.9995809733178339, 0.004862030069182479,
+    //                      -0.028434966956858355, 0.00238560238530266);
+    // Eigen::Vector3f t(0.040335, 0.387851, 0.110805);
+    Eigen::Quaternionf q(0.995083, -0.0463811, -0.0371703, -0.0792326);
+    Eigen::Vector3f t(2.44389, -0.0588237, 0.716113);
     // 变换矩阵
     Eigen::Isometry3f camera_calibrate_ = Eigen::Isometry3f::Identity();
     camera_calibrate_.rotate(q);

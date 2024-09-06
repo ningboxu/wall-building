@@ -1,8 +1,4 @@
-#include <pcl/filters/voxel_grid.h>
-#include <pcl/io/pcd_io.h>
-#include <pcl/point_cloud.h>
-#include <pcl/visualization/pcl_visualizer.h>  // 用于可视化
-#include <iostream>
+
 #include "utils.h"
 
 void SavePointCloud(const pcl::PointCloud<pcl::PointXYZ>::Ptr& pointcloud,
@@ -153,46 +149,73 @@ void ShowPointQuat(const pcl::PointXYZ& p, const Eigen::Quaternionf& quat,
     SavePointCloud(pc_y, name + "_p_y");
     SavePointCloud(pc_z, name + "_p_z");
 }
-void ShowPlane(const pcl::ModelCoefficients::Ptr& plane, std::string name,
-               float start_a, float start_b, float plane_a, float plane_b,
-               int cor)
+void ShowVector(const Eigen::Vector3f& vec, std::string name,
+                Eigen::Vector3f start_p, float length)
 {
     pcl::PointCloud<pcl::PointXYZ>::Ptr pc(new pcl::PointCloud<pcl::PointXYZ>);
-    float a = plane->values[0];
-    float b = plane->values[1];
-    float c = plane->values[2];
-    float d = plane->values[3];
-    // start_x -= plane_x / 2.0;
-    // start_y -= plane_y / 2.0;
-    std::cout << "plane cor: " << cor << std::endl;
-    for (float i = start_a; i < start_a + plane_a;)
+    Eigen::Vector3f vec_tmp = vec.normalized();
+    for (float i = 0; i < length;)
     {
-        for (float j = start_b; j < start_b + plane_b;)
-        {
-            // z = (-d -a*x-b*y)/c
-            // xy plane
-            if (cor == 1)
-            {
-                float k = (-d - a * i - b * j) / c;
-                pc->push_back(pcl::PointXYZ(i, j, k));
-            }
-            // xz plane
-            if (cor == 2)
-            {
-                float k = (-d - a * i - c * j) / b;
-                pc->push_back(pcl::PointXYZ(i, k, j));
-            }
-            // yz plane
-            if (cor == 3)
-            {
-                float k = (-d - b * i - c * j) / a;
-                pc->push_back(pcl::PointXYZ(k, i, j));
-            }
-            j += 0.003;
-        }
-        i += 0.003;
+        Eigen::Vector3f p = start_p + i * vec_tmp;
+        pc->push_back(pcl::PointXYZ(p(0), p(1), p(2)));
+        i += 0.01;
     }
     SavePointCloud(pc, name);
+}
+void ShowPlane(const pcl::PointXYZ& centroid_point,
+               const pcl::ModelCoefficients::Ptr& coefficients,
+               std::string file_name, float plane_size, int resolution)
+{
+    pcl::PointCloud<pcl::PointXYZ>::Ptr plane_cloud(
+        new pcl::PointCloud<pcl::PointXYZ>());
+
+    // 获取平面方程 ax + by + cz + d = 0 中的 a, b, c
+    float a = coefficients->values[0];
+    float b = coefficients->values[1];
+    float c = coefficients->values[2];
+    float d = coefficients->values[3];
+
+    // 确定平面上的两个方向向量
+    Eigen::Vector3f normal(a, b, c);
+    Eigen::Vector3f v1, v2;
+
+    // 创建平面上的两个正交向量
+    if (std::fabs(normal[0]) > std::fabs(normal[1]))
+        v1 = Eigen::Vector3f(-normal[2], 0, normal[0]).normalized();
+    else
+        v1 = Eigen::Vector3f(0, -normal[2], normal[1]).normalized();
+
+    v2 = normal.cross(v1).normalized();
+
+    // 使用规则网格生成点云
+    float step = plane_size / resolution;  // 根据分辨率设置步长
+
+    for (int i = -resolution / 2; i < resolution / 2; ++i)
+    {
+        for (int j = -resolution / 2; j < resolution / 2; ++j)
+        {
+            pcl::PointXYZ point;
+            point.x = centroid_point.x + i * step * v1[0] + j * step * v2[0];
+            point.y = centroid_point.y + i * step * v1[1] + j * step * v2[1];
+            point.z = centroid_point.z + i * step * v1[2] + j * step * v2[2];
+
+            plane_cloud->points.push_back(point);
+        }
+    }
+    // todo 可调用函数SavePointCloud
+    //  保存生成的平面点云
+    if (plane_cloud->size())
+    {
+        plane_cloud->width    = plane_cloud->size();
+        plane_cloud->height   = 1;
+        std::string save_path = file_name + ".pcd";
+        pcl::io::savePCDFileASCII(save_path, *plane_cloud);
+        std::cout << "Saved point cloud to " << save_path << std::endl;
+    }
+    else
+    {
+        std::cerr << "WARNING: Plane cloud is empty" << std::endl;
+    }
 }
 
 //--------------------上面是保存数据的功能---------------------
