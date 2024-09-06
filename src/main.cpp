@@ -1,114 +1,16 @@
 #include <glog/logging.h>
 #include <pcl/common/centroid.h>  // 用于计算点云的质心
 #include <pcl/features/moment_of_inertia_estimation.h>  // 用于计算点云的特征信息
-#include <pcl/filters/voxel_grid.h>
 #include <pcl/io/pcd_io.h>
 #include <pcl/io/ply_io.h>
 #include <pcl/point_cloud.h>
 #include <pcl/point_types.h>
 #include <pcl/segmentation/sac_segmentation.h>
-#include <pcl/visualization/pcl_visualizer.h>  // 用于可视化
 #include <Eigen/Geometry>
 #include <chrono>  // 用于统计时间
 #include <cmath>   // 用于计算平方根等数学操作
 #include <iostream>
 #include "utils.h"
-
-// 将点云单位从mm转换为m
-void ConvertPointCloudToMeters(pcl::PointCloud<pcl::PointXYZ>::Ptr& cloud)
-{
-    for (auto& point : cloud->points)
-    {
-        point.x /= 1000.0f;  // 将 x 坐标从 mm 转换为 m
-        point.y /= 1000.0f;  // 将 y 坐标从 mm 转换为 m
-        point.z /= 1000.0f;  // 将 z 坐标从 mm 转换为 m
-    }
-}
-
-// 计算点到平面的距离
-double computePointToPlaneDistance(
-    const Eigen::Vector4f& point,
-    const pcl::ModelCoefficients::Ptr& coefficients)
-{
-    // 提取平面方程的系数 A, B, C, D
-    double A = coefficients->values[0];
-    double B = coefficients->values[1];
-    double C = coefficients->values[2];
-    double D = coefficients->values[3];
-
-    // 点的坐标 (x, y, z)
-    double x = point[0];
-    double y = point[1];
-    double z = point[2];
-
-    // 计算点到平面的距离
-    double numerator   = std::fabs(A * x + B * y + C * z + D);  // 计算分子
-    double denominator = std::sqrt(A * A + B * B + C * C);      // 计算分母
-    return numerator / denominator;
-}
-
-void DownsamplePointCloud(pcl::PointCloud<pcl::PointXYZ>::Ptr& cloud,
-                          float leaf_size)
-{
-    pcl::VoxelGrid<pcl::PointXYZ> sor;
-    sor.setInputCloud(cloud);
-    sor.setLeafSize(leaf_size, leaf_size, leaf_size);
-    pcl::PointCloud<pcl::PointXYZ>::Ptr cloud_filtered(
-        new pcl::PointCloud<pcl::PointXYZ>);
-    sor.filter(*cloud_filtered);
-    cloud = cloud_filtered;
-}
-
-void visualizePointCloudWithVectors(pcl::PointCloud<pcl::PointXYZ>::Ptr& cloud,
-                                    const Eigen::Vector4f& centroid,
-                                    const Eigen::Vector3f& major_vector,
-                                    const Eigen::Vector3f& middle_vector,
-                                    const Eigen::Vector3f& minor_vector)
-{
-    // 创建可视化窗口
-    pcl::visualization::PCLVisualizer::Ptr viewer(
-        new pcl::visualization::PCLVisualizer("3D Viewer"));
-    viewer->setBackgroundColor(0, 0, 0);  // 设置背景颜色为黑色
-
-    // 将点云添加到可视化窗口
-    pcl::visualization::PointCloudColorHandlerCustom<pcl::PointXYZ> cloud_color(
-        cloud, 255, 255, 255);  // 白色点云
-    viewer->addPointCloud<pcl::PointXYZ>(cloud, cloud_color, "sample cloud");
-
-    // 绘制质心
-    pcl::PointXYZ centroid_point(centroid[0], centroid[1], centroid[2]);
-    viewer->addSphere(centroid_point, 0.02, 1.0, 0.0, 0.0,
-                      "centroid");  // 用红色球体表示质心
-
-    // 绘制三个特征向量
-    pcl::PointXYZ major_end(centroid[0] + major_vector[0],
-                            centroid[1] + major_vector[1],
-                            centroid[2] + major_vector[2]);
-    pcl::PointXYZ middle_end(centroid[0] + middle_vector[0],
-                             centroid[1] + middle_vector[1],
-                             centroid[2] + middle_vector[2]);
-    pcl::PointXYZ minor_end(centroid[0] + minor_vector[0],
-                            centroid[1] + minor_vector[1],
-                            centroid[2] + minor_vector[2]);
-
-    // 用线表示特征向量
-    viewer->addLine(centroid_point, major_end, 1.0, 0.0, 0.0,
-                    "major_vector");  // 红色线表示主方向
-    viewer->addLine(centroid_point, middle_end, 0.0, 1.0, 0.0,
-                    "middle_vector");  // 绿色线表示中方向
-    viewer->addLine(centroid_point, minor_end, 0.0, 0.0, 1.0,
-                    "minor_vector");  // 蓝色线表示次方向
-
-    // 设置点云的大小
-    viewer->setPointCloudRenderingProperties(
-        pcl::visualization::PCL_VISUALIZER_POINT_SIZE, 1, "sample cloud");
-
-    // 启动可视化循环
-    while (!viewer->wasStopped())
-    {
-        viewer->spinOnce(100);
-    }
-}
 
 int main(int argc, char** argv)
 {
@@ -180,6 +82,42 @@ int main(int argc, char** argv)
         << duration_cast<milliseconds>(end_convert - start_convert).count()
         << " ms" << std::endl;
 
+    // todo 检测砖块点云
+
+    //     //! 将点云分割为4cm厚度的层
+    //     // 假设高度有1米
+    //     int slicing_num = 1.0 / 0.04;
+    //     pcl::PointCloud<pcl::PointXYZ>::Ptr slicing_cloud[slicing_num];
+    //     for (auto& a : slicing_cloud)
+    //     {
+    //         a = pcl::PointCloud<pcl::PointXYZ>::Ptr(
+    //             new pcl::PointCloud<pcl::PointXYZ>);
+    //     }
+    //     for (unsigned int i = 0; i < cloud_in_base->size(); i++)
+    //     {
+    //         const pcl::PointXYZ& Point = cloud_in_base->points[i];
+    //         int s = std::floor((cloud_in_base_maxv.z - Point.z) / 0.04);
+    //         // LOG(INFO) << "s:" << cloud_in_rotated_min;
+    //         if (s < slicing_num - 1)
+    //         {
+    //             slicing_cloud[s]->points.push_back(Point);
+    //         }
+    //     }
+
+    // //! 调试 保存每一层的点云数据
+    // #ifdef OUTPUT_RESULTS
+    //     for (int i = 0; i < slicing_num; i++)
+    //     {
+    //         if (slicing_cloud[i]->size() > 0)
+    //         {  // 确保点云层不是空的
+    //             std::ostringstream oss;
+    //             oss << "slicing_cloud_layer_" << (i + 1);  //
+    //             创建文件名，包含层编号 SavePointCloud(slicing_cloud[i],
+    //             oss.str());
+    //         }
+    //     }
+    // #endif
+
     // 计算点云中心点
     Eigen::Vector4f centroid;
     pcl::compute3DCentroid(*cloud, centroid);
@@ -216,6 +154,11 @@ int main(int argc, char** argv)
     std::cout << "Model coefficients: ";
     for (auto val : coefficients->values) std::cout << val << " ";
     std::cout << std::endl;
+
+#ifdef OUTPUT_RESULTS
+    ShowPlane(coefficients, "coefficients", centroid_point.x - 0.05,
+              centroid_point.y - 0.12, 0.35, 1.4, 1);
+#endif
 
     // 计算质心到拟合平面的距离
     double distance = computePointToPlaneDistance(centroid, coefficients);

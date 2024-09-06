@@ -1,0 +1,25 @@
+# We'll use defaults from the Google style with following difference https://clang.llvm.org/docs/ClangFormatStyleOptions.html
+BasedOnStyle: Google
+IndentWidth: 4
+AccessModifierOffset: -4
+BreakBeforeBraces: Allman
+# BraceWrapping:
+#   AfterEnum: true
+#   AfterStruct: true
+#   SplitEmptyFunction: true
+#   AfterClass: false
+#   AfterCaseLabel: true
+#   AfterControlStatement: Always
+#   AfterNamespace: true
+#   AfterUnion: true
+#   AfterFunction: true
+#   BeforeElse: true
+#   BeforeCatch: true
+
+BreakConstructorInitializers: BeforeComma
+AlignConsecutiveAssignments: Consecutive
+AllowShortBlocksOnASingleLine: Empty
+AllowShortFunctionsOnASingleLine: Inline
+IndentCaseLabels: false
+IncludeBlocks: Preserve
+ColumnLimit: 80
