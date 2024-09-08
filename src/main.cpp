@@ -36,11 +36,12 @@ int main(int argc, char** argv)
 
     // 加载点云数据
     auto start_load = high_resolution_clock::now();  // 记录开始时间
-    pcl::PointCloud<pcl::PointXYZ>::Ptr cloud(
+    pcl::PointCloud<pcl::PointXYZ>::Ptr cloud_original(
         new pcl::PointCloud<pcl::PointXYZ>);
     if (file_path.substr(file_path.find_last_of(".") + 1) == "pcd")
     {
-        if (pcl::io::loadPCDFile<pcl::PointXYZ>(file_path, *cloud) == -1)
+        if (pcl::io::loadPCDFile<pcl::PointXYZ>(file_path, *cloud_original) ==
+            -1)
         {
             PCL_ERROR("Couldn't read PCD file\n");
             return -1;
@@ -49,7 +50,7 @@ int main(int argc, char** argv)
     else if (file_path.substr(file_path.find_last_of(".") + 1) == "ply")
     {
         pcl::PLYReader reader;
-        if (reader.read(file_path, *cloud) == -1)
+        if (reader.read(file_path, *cloud_original) == -1)
         {
             PCL_ERROR("Couldn't read PLY file\n");
             return -1;
@@ -62,25 +63,35 @@ int main(int argc, char** argv)
         return -1;
     }
     auto end_load = high_resolution_clock::now();  // 记录结束时间
-    LOG(INFO) << "Loaded " << cloud->width * cloud->height
+    LOG(INFO) << "Loaded " << cloud_original->width * cloud_original->height
               << " data points from " << file_path;
     std::cout << "Loading time: "
               << duration_cast<milliseconds>(end_load - start_load).count()
               << " ms" << std::endl;
 
-    // 打印加载的点云点数
-    std::cout << "PointCloud before conversion: " << cloud->points.size()
-              << " points." << std::endl;
+    std::cout << "PointCloud before conversion: "
+              << cloud_original->points.size() << " points." << std::endl;
 
-    // 将点云单位从毫米转换为米
+    //! 将点云单位从毫米转换为米
     auto start_convert = high_resolution_clock::now();  // 记录开始时间
-    ConvertPointCloudToMeters(cloud);
+    ConvertPointCloudToMeters(cloud_original);
     LOG(INFO) << "Converted point cloud units from mm to meters.";
     auto end_convert = high_resolution_clock::now();  // 记录结束时间
     std::cout
         << "Conversion time: "
         << duration_cast<milliseconds>(end_convert - start_convert).count()
         << " ms" << std::endl;
+
+    // 按z轴过滤点云
+    pcl::PointCloud<pcl::PointXYZ>::Ptr cloud(
+        new pcl::PointCloud<pcl::PointXYZ>);
+
+    // 假设你已经填充了cloud
+    filterZAxis(cloud_original, 0.650, 0.70,
+                cloud);  // 例如保留 z 值在 [0, 1] 范围内的点
+#ifdef OUTPUT_RESULTS
+    SavePointCloud(cloud, "cloud_after_z");
+#endif
 
     // todo 检测砖块点云
 
@@ -172,7 +183,9 @@ int main(int argc, char** argv)
     DownsamplePointCloud(cloud, 0.005f);
     std::cout << "PointCloud after Downsample: " << cloud->points.size()
               << " points." << std::endl;
+#ifdef OUTPUT_RESULTS
     SavePointCloud(cloud, "downsampled_cloud");
+#endif
     auto end_downsample = high_resolution_clock::now();  // 记录结束时间
     std::cout << "Downsampling time: "
               << duration_cast<milliseconds>(end_downsample - start_downsample)
@@ -215,6 +228,37 @@ int main(int argc, char** argv)
     // 保存质心和位姿
     ShowPointQuat(centroid_point, quat, "pose_camera");
 
+    //! 坐标系转换--------------------------
+
+    // 相机到工具的变换 (平移和欧拉角)
+    Eigen::Vector3f translation_CT(46.307365116896307, 83.64781988216231,
+                                   -270.34468528536888);  // 相机到工具的平移
+    Eigen::Vector3f euler_CT(
+        0.050761172951085926, 0.0047434909777201821,
+        -1.5778546245587957);  // 相机到工具的旋转 (ZYX顺序欧拉角)
+
+    // 工具到基坐标系的变换 (平移和四元数)
+    Eigen::Vector3f translation_TB(2502, -76.18,
+                                   996.38);  // 工具到基坐标系的平移
+    Eigen::Quaternionf quat_TB(0.75678, -0.07721, 0.02453,
+                               0.64863);  // 工具到基坐标系的旋转 (四元数)
+
+    // 保存相机到基坐标系的平移和旋转
+    Eigen::Vector3f translation_CB;
+    Eigen::Quaternionf quat_CB;
+
+    // 计算相机到基坐标系的变换
+    computeCameraToBaseTransform(translation_CT, euler_CT, translation_TB,
+                                 quat_TB, translation_CB, quat_CB);
+
+    // 打印最终结果
+    std::cout << "最终相机到基坐标系的平移: " << translation_CB.transpose()
+              << std::endl;
+    //! 打印是x y z w
+    std::cout << "最终相机到基坐标系的旋转 (四元数): "
+              << quat_CB.coeffs().transpose() << std::endl;
+    //! 坐标系转换----------------------------------------
+
     // 手眼标定结果
     // Eigen::Quaternionf q(1, 0, 0, 0);
     // Eigen::Vector3f t(0, 0, 0);
@@ -224,8 +268,9 @@ int main(int argc, char** argv)
     // Eigen::Quaternionf q(0.9995809733178339, 0.004862030069182479,
     //                      -0.028434966956858355, 0.00238560238530266);
     // Eigen::Vector3f t(0.040335, 0.387851, 0.110805);
-    Eigen::Quaternionf q(0.995083, -0.0463811, -0.0371703, -0.0792326);
-    Eigen::Vector3f t(2.44389, -0.0588237, 0.716113);
+    Eigen::Quaternionf q(-0.0709712, -0.0759921, -0.0124427, 0.994502);
+    Eigen::Vector3f t(-0.0562036, 2.55131, -1.07154);
+
     // 变换矩阵
     Eigen::Isometry3f camera_calibrate_ = Eigen::Isometry3f::Identity();
     camera_calibrate_.rotate(q);

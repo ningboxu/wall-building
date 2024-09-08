@@ -4,12 +4,14 @@
 #include <glog/logging.h>
 #include <pcl/ModelCoefficients.h>
 #include <pcl/common/transforms.h>  // 用于 transformPointCloud 函数
+#include <pcl/filters/passthrough.h>
 #include <pcl/filters/voxel_grid.h>
 #include <pcl/io/pcd_io.h>
 #include <pcl/point_cloud.h>
 #include <pcl/point_types.h>
 #include <pcl/visualization/pcl_visualizer.h>  // 用于可视化
 #include <Eigen/Dense>
+#include <Eigen/Geometry>  // For Eigen::Quaternion
 #include <iostream>
 #include <string>
 
@@ -46,4 +48,18 @@ void visualizePointCloudWithVectors(pcl::PointCloud<pcl::PointXYZ>::Ptr& cloud,
                                     const Eigen::Vector3f& major_vector,
                                     const Eigen::Vector3f& middle_vector,
                                     const Eigen::Vector3f& minor_vector);
+
+void filterZAxis(pcl::PointCloud<pcl::PointXYZ>::Ptr cloud, float z_min,
+                 float z_max,
+                 pcl::PointCloud<pcl::PointXYZ>::Ptr filtered_cloud);
+
+// 欧拉角转换为四元数 (ZYX顺序)
+Eigen::Quaternionf eulerToQuaternion(const Eigen::Vector3f& euler_angles);
+// 计算相机到基坐标系的变换矩阵
+void computeCameraToBaseTransform(const Eigen::Vector3f& translation_CT,
+                                  const Eigen::Vector3f& euler_CT,
+                                  const Eigen::Vector3f& translation_TB,
+                                  const Eigen::Quaternionf& quat_TB,
+                                  Eigen::Vector3f& translation_CB,
+                                  Eigen::Quaternionf& quat_CB);
 #endif  // UTILS_H
