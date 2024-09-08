@@ -258,6 +258,11 @@ int main(int argc, char** argv)
     std::cout << "最终相机到基坐标系的旋转 (四元数): "
               << quat_CB.coeffs().transpose() << std::endl;
     //! 坐标系转换----------------------------------------
+    // 变换矩阵  todo
+    Eigen::Isometry3f camera_calibrate_ = Eigen::Isometry3f::Identity();
+    camera_calibrate_.rotate(quat_CB);
+    translation_CB = translation_CB / 1000;  //! 转换为m
+    camera_calibrate_.pretranslate(translation_CB);
 
     // 手眼标定结果
     // Eigen::Quaternionf q(1, 0, 0, 0);
@@ -268,29 +273,31 @@ int main(int argc, char** argv)
     // Eigen::Quaternionf q(0.9995809733178339, 0.004862030069182479,
     //                      -0.028434966956858355, 0.00238560238530266);
     // Eigen::Vector3f t(0.040335, 0.387851, 0.110805);
-    Eigen::Quaternionf q(-0.0709712, -0.0759921, -0.0124427, 0.994502);
-    Eigen::Vector3f t(-0.0562036, 2.55131, -1.07154);
 
-    // 变换矩阵
-    Eigen::Isometry3f camera_calibrate_ = Eigen::Isometry3f::Identity();
-    camera_calibrate_.rotate(q);
-    camera_calibrate_.pretranslate(t);
+    // Eigen::Quaternionf q(-0.0709712, -0.0759921, -0.0124427, 0.994502);
+    // Eigen::Vector3f t(-0.0562036, 2.55131, -1.07154);
+
+    // // 变换矩阵
+    // Eigen::Isometry3f camera_calibrate_ = Eigen::Isometry3f::Identity();
+    // camera_calibrate_.rotate(q);
+    // camera_calibrate_.pretranslate(t);
 
     // 在base下的质心和位姿
     Eigen::Vector3f centroid_base =
-        camera_calibrate_ * centroid_vec;     // 质心转换
-    Eigen::Quaternionf quat_base = q * quat;  // 姿态转换
+        camera_calibrate_ * centroid_vec;           // 质心转换
+    Eigen::Quaternionf quat_base = quat_CB * quat;  // 姿态转换
     std::cout << "camera_calibrate_ matrix:" << std::endl;
     std::cout << camera_calibrate_.matrix() << std::endl;
-
-    // 输出结果
     std::cout << "Base coordinate system position: "
               << centroid_base.transpose() << std::endl;
-    std::cout << "Base coordinate system orientation (quaternion): "
+    std::cout << "Base coordinate system orientation (quaternion x y z w): "
               << quat_base.coeffs().transpose() << std::endl;
     pcl::PointXYZ centroid_p_base(centroid_base[0], centroid_base[1],
                                   centroid_base[2]);
+
+#ifdef OUTPUT_RESULTS
     ShowPointQuat(centroid_p_base, quat_base, "pose_base");
+#endif
 
     // cloud_in_base(下采样后)
     pcl::PointCloud<pcl::PointXYZ>::Ptr cloud_in_base(
