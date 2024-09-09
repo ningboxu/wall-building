@@ -80,7 +80,8 @@ void ShowPointQuat(const pcl::PointXYZ& p, const Eigen::Quaternionf& quat,
     std::uint32_t b = ((std::uint32_t)(b_0) << 16 | (std::uint32_t)(b_0) << 8 |
                        (std::uint32_t)(a_255));
 
-    for (float i = 0; i < 0.2;)
+    // for (float i = 0; i < 0.2;)             //! if  m
+    for (float i = 0; i < 0.2 * 1000;)  // if mm
     {
         Eigen::Vector3f p_x = i * vec_x;
         Eigen::Vector3f p_y = i * vec_y;
@@ -358,6 +359,7 @@ void computeCameraToBaseTransform(
 {
     // 1. 工具到相机的旋转四元数 (欧拉角 -> 四元数)
     Eigen::Quaternionf quat_TC = eulerToQuaternion(euler_TC);
+    quat_TC.normalize();  // 四元数归一化
 
     // 2. 工具到相机的变换矩阵
     Eigen::Matrix4f T_TC   = Eigen::Matrix4f::Identity();
@@ -375,7 +377,7 @@ void computeCameraToBaseTransform(
     Eigen::Matrix4f T_CT   = Eigen::Matrix4f::Identity();
     T_CT.block<3, 3>(0, 0) = R_CT;  // 旋转部分
     T_CT.block<3, 1>(0, 3) = t_CT;  // 平移部分
-    std::cout << "T_CT" << T_CT << std::endl;
+    std::cout << "T_CT: \n" << T_CT << std::endl;
 
     // 4. 工具到基坐标系的变换矩阵
     Eigen::Matrix4f T_TB   = Eigen::Matrix4f::Identity();
@@ -389,9 +391,9 @@ void computeCameraToBaseTransform(
     translation_CB                     = T_CB.block<3, 1>(0, 3);
     Eigen::Matrix3f rotation_CB_matrix = T_CB.block<3, 3>(0, 0);
     quat_CB                            = Eigen::Quaternionf(rotation_CB_matrix);
+    quat_CB.normalize();  // 对结果四元数进行归一化
 
     // 打印信息
-
     std::cout << "相机到基坐标系的平移: " << translation_CB.transpose()
               << std::endl;
     std::cout << "相机到基坐标系的旋转 (四元数): "
