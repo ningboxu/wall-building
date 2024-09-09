@@ -56,10 +56,11 @@ void filterZAxis(pcl::PointCloud<pcl::PointXYZ>::Ptr cloud, float z_min,
 // 欧拉角转换为四元数 (ZYX顺序)
 Eigen::Quaternionf eulerToQuaternion(const Eigen::Vector3f& euler_angles);
 // 计算相机到基坐标系的变换矩阵
-void computeCameraToBaseTransform(const Eigen::Vector3f& translation_CT,
-                                  const Eigen::Vector3f& euler_CT,
-                                  const Eigen::Vector3f& translation_TB,
-                                  const Eigen::Quaternionf& quat_TB,
-                                  Eigen::Vector3f& translation_CB,
-                                  Eigen::Quaternionf& quat_CB);
+void computeCameraToBaseTransform(
+    const Eigen::Vector3f& translation_TC,  // 工具到相机的平移
+    const Eigen::Vector3f& euler_TC,        // 工具到相机的欧拉角
+    const Eigen::Vector3f& translation_TB,  // 工具到基坐标系的平移
+    const Eigen::Quaternionf& quat_TB,      // 工具到基坐标系的四元数
+    Eigen::Vector3f& translation_CB,        // 相机到基坐标系的平移
+    Eigen::Quaternionf& quat_CB);
 #endif  // UTILS_H

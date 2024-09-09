@@ -348,27 +348,41 @@ Eigen::Quaternionf eulerToQuaternion(const Eigen::Vector3f& euler_angles)
 }
 
 // 计算相机到基坐标系的变换矩阵
-void computeCameraToBaseTransform(const Eigen::Vector3f& translation_CT,
-                                  const Eigen::Vector3f& euler_CT,
-                                  const Eigen::Vector3f& translation_TB,
-                                  const Eigen::Quaternionf& quat_TB,
-                                  Eigen::Vector3f& translation_CB,
-                                  Eigen::Quaternionf& quat_CB)
+void computeCameraToBaseTransform(
+    const Eigen::Vector3f& translation_TC,  // 工具到相机的平移
+    const Eigen::Vector3f& euler_TC,        // 工具到相机的欧拉角
+    const Eigen::Vector3f& translation_TB,  // 工具到基坐标系的平移
+    const Eigen::Quaternionf& quat_TB,      // 工具到基坐标系的四元数
+    Eigen::Vector3f& translation_CB,        // 相机到基坐标系的平移
+    Eigen::Quaternionf& quat_CB)            // 相机到基坐标系的四元数
 {
-    // 相机到工具的旋转四元数 (欧拉角 -> 四元数)
-    Eigen::Quaternionf quat_CT = eulerToQuaternion(euler_CT);
+    // 1. 工具到相机的旋转四元数 (欧拉角 -> 四元数)
+    Eigen::Quaternionf quat_TC = eulerToQuaternion(euler_TC);
 
-    // 相机到工具的变换矩阵
+    // 2. 工具到相机的变换矩阵
+    Eigen::Matrix4f T_TC   = Eigen::Matrix4f::Identity();
+    T_TC.block<3, 3>(0, 0) = quat_TC.toRotationMatrix();  // 旋转部分
+    T_TC.block<3, 1>(0, 3) = translation_TC;              // 平移部分
+
+    // 3. 计算相机到工具的逆变换 T_CT
+    Eigen::Matrix3f R_TC = T_TC.block<3, 3>(0, 0);  // 提取旋转部分
+    Eigen::Vector3f t_TC = T_TC.block<3, 1>(0, 3);  // 提取平移部分
+
+    Eigen::Matrix3f R_CT = R_TC.transpose();  // 旋转部分取转置
+    Eigen::Vector3f t_CT = -R_CT * t_TC;      // 平移部分逆变换
+
+    // 组装相机到工具的变换矩阵
     Eigen::Matrix4f T_CT   = Eigen::Matrix4f::Identity();
-    T_CT.block<3, 3>(0, 0) = quat_CT.toRotationMatrix();  // 旋转部分
-    T_CT.block<3, 1>(0, 3) = translation_CT;              // 平移部分
+    T_CT.block<3, 3>(0, 0) = R_CT;  // 旋转部分
+    T_CT.block<3, 1>(0, 3) = t_CT;  // 平移部分
+    std::cout << "T_CT" << T_CT << std::endl;
 
-    // 工具到基坐标系的变换矩阵
+    // 4. 工具到基坐标系的变换矩阵
     Eigen::Matrix4f T_TB   = Eigen::Matrix4f::Identity();
     T_TB.block<3, 3>(0, 0) = quat_TB.toRotationMatrix();  // 旋转部分
     T_TB.block<3, 1>(0, 3) = translation_TB;              // 平移部分
 
-    // 相机到基坐标系的变换
+    // 5. 相机到基坐标系的变换 T_CB = T_TB * T_CT
     Eigen::Matrix4f T_CB = T_TB * T_CT;
 
     // 提取相机到基坐标系的平移和旋转（四元数）
@@ -377,15 +391,6 @@ void computeCameraToBaseTransform(const Eigen::Vector3f& translation_CT,
     quat_CB                            = Eigen::Quaternionf(rotation_CB_matrix);
 
     // 打印信息
-    std::cout << "相机到工具的平移: " << translation_CT.transpose()
-              << std::endl;
-    std::cout << "相机到工具的旋转 (四元数): " << quat_CT.coeffs().transpose()
-              << std::endl;
-
-    std::cout << "工具到基坐标系的平移: " << translation_TB.transpose()
-              << std::endl;
-    std::cout << "工具到基坐标系的旋转 (四元数): "
-              << quat_TB.coeffs().transpose() << std::endl;
 
     std::cout << "相机到基坐标系的平移: " << translation_CB.transpose()
               << std::endl;
