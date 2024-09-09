@@ -27,14 +27,14 @@ int main(int argc, char** argv)
 
     std::string file_path = argv[1];
 
-    // 日志设置
+    //! 日志设置
     google::InitGoogleLogging(argv[0]);
     FLAGS_stderrthreshold  = google::ERROR;
     FLAGS_minloglevel      = google::INFO;
     FLAGS_colorlogtostderr = true;
     FLAGS_log_dir          = "./";
 
-    // 加载点云数据
+    //! 加载点云数据
     auto start_load = high_resolution_clock::now();  // 记录开始时间
     pcl::PointCloud<pcl::PointXYZ>::Ptr cloud_original(
         new pcl::PointCloud<pcl::PointXYZ>);
@@ -102,7 +102,6 @@ int main(int argc, char** argv)
     pass.filter(*cloud);
 
     // todo 检测砖块点云
-
     //     //! 将点云分割为4cm厚度的层
     //     // 假设高度有1米
     //     int slicing_num = 1.0 / 0.04;
@@ -137,7 +136,7 @@ int main(int argc, char** argv)
     //     }
     // #endif
 
-    // 计算点云中心点
+    //! 计算点云中心点
     Eigen::Vector4f centroid;
     pcl::compute3DCentroid(*cloud, centroid);
     std::cout << "Centroid of point cloud: (" << centroid[0] << ", "
@@ -145,7 +144,7 @@ int main(int argc, char** argv)
     Eigen::Vector3f centroid_vec(centroid[0], centroid[1], centroid[2]);
     pcl::PointXYZ centroid_point(centroid[0], centroid[1], centroid[2]);
 
-    // 设置平面分割器
+    // 设置平面分割器 //todo 暂没用到
     auto start_seg = high_resolution_clock::now();  // 记录开始时间
     pcl::SACSegmentation<pcl::PointXYZ> seg;
     pcl::PointIndices::Ptr inliers(new pcl::PointIndices);
@@ -179,14 +178,15 @@ int main(int argc, char** argv)
     Eigen::Vector3f normal(coefficients->values[0], coefficients->values[1],
                            coefficients->values[2]);
     ShowPlane(centroid_point, coefficients, "coefficients", 1.0f, 100);
-    ShowVector(normal, "normal", centroid_vec, 1.0f);
+    ShowVector(normal, "normal", centroid_vec, 1.0f);  //! if m  if mm
+
 #endif
 
     // 计算质心到拟合平面的距离
     double distance = computePointToPlaneDistance(centroid, coefficients);
     std::cout << "Distance from centroid to plane: " << distance << std::endl;
 
-    // 体素下采样
+    //! 体素下采样
     auto start_downsample = high_resolution_clock::now();  // 记录开始时间
     // DownsamplePointCloud(cloud, 0.005f);                   // 使用m
     DownsamplePointCloud(cloud, 0.005f * 1000);  // mm
@@ -201,7 +201,7 @@ int main(int argc, char** argv)
                      .count()
               << " ms" << std::endl;
 
-    // 使用 MomentOfInertiaEstimation 计算特征向量
+    //! 使用 MomentOfInertiaEstimation 计算特征向量
     auto start_features = high_resolution_clock::now();  // 记录开始时间
     pcl::MomentOfInertiaEstimation<pcl::PointXYZ> feature_extractor;
     feature_extractor.setInputCloud(cloud);
@@ -238,7 +238,6 @@ int main(int argc, char** argv)
     ShowPointQuat(centroid_point, quat, "pose_camera");
 
     //! 坐标系转换--------------------------
-
     // 工具到相机的变换 (平移和欧拉角)
     Eigen::Vector3f translation_TC(46.307365116896307, 83.64781988216231,
                                    -270.34468528536888);
@@ -266,7 +265,8 @@ int main(int argc, char** argv)
     std::cout << "最终相机到基坐标系的旋转 (四元数): "
               << quat_CB.coeffs().transpose() << std::endl;
     //! 坐标系转换----------------------------------------
-    // 变换矩阵  todo
+
+    // 变换矩阵 //todo 重命名
     Eigen::Isometry3f camera_calibrate_ = Eigen::Isometry3f::Identity();
     camera_calibrate_.rotate(quat_CB);
     // translation_CB = translation_CB / 1000;  //! 转换为m
@@ -274,7 +274,7 @@ int main(int argc, char** argv)
     translation_CB = translation_CB;
     camera_calibrate_.pretranslate(translation_CB);
 
-    // 在base下的质心和位姿
+    //! 在base下的质心和位姿
     Eigen::Vector3f centroid_base =
         camera_calibrate_ * centroid_vec;           // 质心转换
     Eigen::Quaternionf quat_base = quat_CB * quat;  // 姿态转换
@@ -291,7 +291,7 @@ int main(int argc, char** argv)
     ShowPointQuat(centroid_p_base, quat_base, "pose_base");
 #endif
 
-    // cloud_in_base(下采样后)
+    //! cloud_in_base(下采样后)
     pcl::PointCloud<pcl::PointXYZ>::Ptr cloud_in_base(
         new pcl::PointCloud<pcl::PointXYZ>);
     pcl::transformPointCloud(*cloud, *cloud_in_base,
