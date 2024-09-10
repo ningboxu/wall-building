@@ -291,6 +291,46 @@ int main(int argc, char** argv)
     ShowPointQuat(centroid_p_base, quat_base, "pose_base");
 #endif
 
+    //! 根据需求调整位姿，绕z方向旋转多少度
+    // 先计算当前的旋转矩阵
+    Eigen::Matrix3f rotation_matrix1 = quat_base.toRotationMatrix();
+
+    // 提取当前的Z方向向量作为旋转轴
+    Eigen::Vector3f z_direction = rotation_matrix1.col(2);  // Z方向向量
+
+    // 创建绕当前Z方向旋转90度的旋转矩阵
+    float angle = M_PI / 2;  // 90度 = pi/2 弧度  //todo
+    Eigen::Matrix3f rotation_around_z_direction;
+    rotation_around_z_direction =
+        Eigen::AngleAxisf(angle, z_direction.normalized());
+
+    // 将绕Z方向的旋转矩阵与当前的旋转矩阵相乘
+    Eigen::Matrix3f new_rotation_matrix =
+        rotation_around_z_direction * rotation_matrix1;
+
+    // 将更新后的旋转矩阵转换回四元数
+    Eigen::Quaternionf new_quat(new_rotation_matrix);
+
+    // 输出新的姿态方向向量
+    Eigen::Vector3f new_x_direction = new_rotation_matrix.col(0);  // x方向向量
+    Eigen::Vector3f new_y_direction = new_rotation_matrix.col(1);  // y方向向量
+    Eigen::Vector3f new_z_direction = new_rotation_matrix.col(2);  // z方向向量
+
+    // 输出结果
+    std::cout << "New orientation in base (quaternion x y z w): "
+              << new_quat.coeffs().transpose() << std::endl;
+
+    std::cout << "New X direction in base: " << new_x_direction.transpose()
+              << std::endl;
+    std::cout << "New Y direction in base: " << new_y_direction.transpose()
+              << std::endl;
+    std::cout << "New Z direction in base: " << new_z_direction.transpose()
+              << std::endl;
+
+#ifdef OUTPUT_RESULTS
+    ShowPointQuat(centroid_p_base, new_quat, "new_pose_base");
+#endif
+
     //! cloud_in_base(下采样后)
     pcl::PointCloud<pcl::PointXYZ>::Ptr cloud_in_base(
         new pcl::PointCloud<pcl::PointXYZ>);
@@ -301,7 +341,11 @@ int main(int argc, char** argv)
     LOG(INFO) << "cloud_in_base->points.size: " << cloud_in_base->points.size();
     std::cout << " cloud_in_base->points.size: " << cloud_in_base->points.size()
               << std::endl;
+
+#ifdef OUTPUT_RESULTS
     SavePointCloud(cloud_in_base, "cloud_in_base");
+#endif
+
     // 记录程序总结束时间
     auto program_end = high_resolution_clock::now();
     std::cout
