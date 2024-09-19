@@ -28,8 +28,12 @@ void ShowPointQuat(const pcl::PointXYZ& p, const Eigen::Quaternionf& quat,
 Eigen::Vector3f RotMat2Euler(const Eigen::Matrix3f& R);
 void ShowPlane(const pcl::PointXYZ& centroid_point,
                const pcl::ModelCoefficients::Ptr& coefficients,
-               std::string file_name, float plane_size = 1.0f,
+               std::string file_name, float plane_size = 1.0f,  // if mm
                int resolution = 100);
+void ShowPlane(const pcl::PointXYZ& centroid_point,
+               const Eigen::Vector4f& coefficients, std::string file_name,
+               float plane_size = 1.0f, int resolution = 100);
+
 void ShowVector(const Eigen::Vector3f& vec, std::string name,
                 Eigen::Vector3f start_p, float length);
 // ------------------保存点云结果----------
@@ -39,6 +43,8 @@ void ConvertPointCloudToMeters(pcl::PointCloud<pcl::PointXYZ>::Ptr& cloud);
 double computePointToPlaneDistance(
     const Eigen::Vector4f& point,
     const pcl::ModelCoefficients::Ptr& coefficients);
+double computePointToPlaneDistance(const Eigen::Vector4f& point,
+                                   const Eigen::Vector4f& coefficients);
 // 体素滤波
 void DownsamplePointCloud(pcl::PointCloud<pcl::PointXYZ>::Ptr& cloud,
                           float leaf_size);
@@ -63,4 +69,21 @@ void computeCameraToBaseTransform(
     const Eigen::Quaternionf& quat_TB,      // 工具到基坐标系的四元数
     Eigen::Vector3f& translation_CB,        // 相机到基坐标系的平移
     Eigen::Quaternionf& quat_CB);
+
+// 计算残差（每个点到平面的距离）
+double calculateError(const pcl::PointCloud<pcl::PointXYZ>::Ptr& cloud,
+                      const Eigen::Vector4f& coefficients);
+
+// 使用RANSAC拟合平面
+Eigen::Vector4f fitPlaneRANSAC(
+    const pcl::PointCloud<pcl::PointXYZ>::Ptr& cloud);
+
+// 使用最小二乘法拟合平面
+Eigen::Vector4f fitPlaneLeastSquares(
+    const pcl::PointCloud<pcl::PointXYZ>::Ptr& cloud);
+
+// 输出平面系数
+void printPlaneCoefficients(const std::string& method_name,
+                            const Eigen::Vector4f& coefficients);
+
 #endif  // UTILS_H

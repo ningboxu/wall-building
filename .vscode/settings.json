@@ -60,6 +60,18 @@
         "cinttypes": "cpp",
         "typeindex": "cpp",
         "typeinfo": "cpp",
-        "geometry": "cpp"
+        "geometry": "cpp",
+        "unordered_set": "cpp",
+        "random": "cpp"
+        
     }
+  // clang-format 扩展的配置
+"clang-format.style" : "file",
+"clang-format.assumeFilename": "/home/xnb/.clang-format",
+"clang-format.executable": "/usr/bin/clang-format",
+"clang-format.fallbackStyle": "Google",
+"editor.defaultFormatter": "xaver.clang-format",
+"git.confirmSync": false,
+"C_Cpp.clang_format_path": "/home/xnb/.clang-format",
+"C_Cpp.formatting": "clangFormat"
 }

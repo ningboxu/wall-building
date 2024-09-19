@@ -1,6 +1,17 @@
 
 #include "utils.h"
-
+#include <pcl/io/ply_io.h>
+#include <pcl/point_types.h>
+#include <pcl/ModelCoefficients.h>
+#include <pcl/filters/extract_indices.h>
+#include <pcl/sample_consensus/method_types.h>
+#include <pcl/sample_consensus/model_types.h>
+#include <pcl/segmentation/sac_segmentation.h>
+#include <pcl/common/centroid.h>
+#include <pcl/visualization/pcl_visualizer.h>
+#include <Eigen/Dense>
+#include <chrono>
+#include <iostream>
 void SavePointCloud(const pcl::PointCloud<pcl::PointXYZ>::Ptr& pointcloud,
                     std::string name)
 {
@@ -218,6 +229,63 @@ void ShowPlane(const pcl::PointXYZ& centroid_point,
         std::cerr << "WARNING: Plane cloud is empty" << std::endl;
     }
 }
+void ShowPlane(
+    const pcl::PointXYZ& centroid_point,
+    const Eigen::Vector4f&
+        coefficients,  // 使用 Eigen::Vector4f 代替 pcl::ModelCoefficients
+    std::string file_name, float plane_size, int resolution)
+{
+    pcl::PointCloud<pcl::PointXYZ>::Ptr plane_cloud(
+        new pcl::PointCloud<pcl::PointXYZ>());
+
+    // 获取平面方程 ax + by + cz + d = 0 中的 a, b, c, d
+    float a = coefficients[0];  // 从 Eigen::Vector4f 提取系数
+    float b = coefficients[1];
+    float c = coefficients[2];
+    float d = coefficients[3];
+
+    // 确定平面上的两个方向向量
+    Eigen::Vector3f normal(a, b, c);
+    Eigen::Vector3f v1, v2;
+
+    // 创建平面上的两个正交向量
+    if (std::fabs(normal[0]) > std::fabs(normal[1]))
+        v1 = Eigen::Vector3f(-normal[2], 0, normal[0]).normalized();
+    else
+        v1 = Eigen::Vector3f(0, -normal[2], normal[1]).normalized();
+
+    v2 = normal.cross(v1).normalized();
+
+    // 使用规则网格生成点云
+    float step = plane_size / resolution;  // 根据分辨率设置步长
+
+    for (int i = -resolution / 2; i < resolution / 2; ++i)
+    {
+        for (int j = -resolution / 2; j < resolution / 2; ++j)
+        {
+            pcl::PointXYZ point;
+            point.x = centroid_point.x + i * step * v1[0] + j * step * v2[0];
+            point.y = centroid_point.y + i * step * v1[1] + j * step * v2[1];
+            point.z = centroid_point.z + i * step * v1[2] + j * step * v2[2];
+
+            plane_cloud->points.push_back(point);
+        }
+    }
+
+    // 保存生成的平面点云
+    if (plane_cloud->size())
+    {
+        plane_cloud->width    = plane_cloud->size();
+        plane_cloud->height   = 1;
+        std::string save_path = file_name + ".pcd";
+        pcl::io::savePCDFileASCII(save_path, *plane_cloud);
+        std::cout << "Saved point cloud to " << save_path << std::endl;
+    }
+    else
+    {
+        std::cerr << "WARNING: Plane cloud is empty" << std::endl;
+    }
+}
 
 //--------------------上面是保存数据的功能---------------------
 
@@ -253,7 +321,25 @@ double computePointToPlaneDistance(
     double denominator = std::sqrt(A * A + B * B + C * C);      // 计算分母
     return numerator / denominator;
 }
+double computePointToPlaneDistance(const Eigen::Vector4f& point,
+                                   const Eigen::Vector4f& coefficients)
+{
+    // 提取平面方程的系数 A, B, C, D
+    double A = coefficients[0];
+    double B = coefficients[1];
+    double C = coefficients[2];
+    double D = coefficients[3];
 
+    // 点的坐标 (x, y, z)
+    double x = point[0];
+    double y = point[1];
+    double z = point[2];
+
+    // 计算点到平面的距离
+    double numerator   = std::fabs(A * x + B * y + C * z + D);  // 计算分子
+    double denominator = std::sqrt(A * A + B * B + C * C);      // 计算分母
+    return numerator / denominator;
+}
 void DownsamplePointCloud(pcl::PointCloud<pcl::PointXYZ>::Ptr& cloud,
                           float leaf_size)
 {
@@ -398,4 +484,90 @@ void computeCameraToBaseTransform(
               << std::endl;
     std::cout << "相机到基坐标系的旋转 (四元数): "
               << quat_CB.coeffs().transpose() << std::endl;
+}
+
+// 计算残差（每个点到平面的距离）
+double calculateError(const pcl::PointCloud<pcl::PointXYZ>::Ptr& cloud,
+                      const Eigen::Vector4f& coefficients)
+{
+    double total_error = 0.0;
+    double a = coefficients[0], b = coefficients[1], c = coefficients[2],
+           d = coefficients[3];
+
+    for (const auto& point : cloud->points)
+    {
+        double distance =
+            std::abs(a * point.x + b * point.y + c * point.z + d) /
+            std::sqrt(a * a + b * b + c * c);
+        total_error += distance * distance;
+    }
+
+    return total_error / cloud->points.size();  // 返回均方误差
+}
+
+// 使用RANSAC拟合平面
+Eigen::Vector4f fitPlaneRANSAC(const pcl::PointCloud<pcl::PointXYZ>::Ptr& cloud)
+{
+    pcl::ModelCoefficients::Ptr coefficients(new pcl::ModelCoefficients);
+    pcl::PointIndices::Ptr inliers(new pcl::PointIndices);
+    pcl::SACSegmentation<pcl::PointXYZ> seg;
+    seg.setOptimizeCoefficients(true);
+    seg.setModelType(pcl::SACMODEL_PLANE);
+    seg.setMethodType(pcl::SAC_RANSAC);
+    seg.setMaxIterations(1000);
+    seg.setDistanceThreshold(0.001);  // 设置为 1mm 以适应 z 轴 5mm 的尺寸
+
+    seg.setInputCloud(cloud);
+    seg.segment(*inliers, *coefficients);
+
+    if (inliers->indices.size() == 0)
+    {
+        PCL_ERROR("Could not estimate a planar model for the given dataset.");
+        return Eigen::Vector4f(0, 0, 0, 0);  // 返回一个无效的平面系数
+    }
+
+    // 返回拟合的平面模型系数
+    return Eigen::Vector4f(coefficients->values[0], coefficients->values[1],
+                           coefficients->values[2], coefficients->values[3]);
+}
+
+// 使用最小二乘法拟合平面
+Eigen::Vector4f fitPlaneLeastSquares(
+    const pcl::PointCloud<pcl::PointXYZ>::Ptr& cloud)
+{
+    // todo 重复计算
+    //  计算点云的中心点
+    Eigen::Vector4f centroid;
+    pcl::compute3DCentroid(*cloud, centroid);
+
+    // 减去质心，将点云归一化
+    Eigen::MatrixXf centered(cloud->points.size(), 3);
+    for (size_t i = 0; i < cloud->points.size(); ++i)
+    {
+        centered(i, 0) = cloud->points[i].x - centroid[0];
+        centered(i, 1) = cloud->points[i].y - centroid[1];
+        centered(i, 2) = cloud->points[i].z - centroid[2];
+    }
+
+    // 计算协方差矩阵
+    Eigen::Matrix3f covariance =
+        (centered.transpose() * centered) / cloud->points.size();
+
+    // 对协方差矩阵进行特征值分解
+    Eigen::SelfAdjointEigenSolver<Eigen::Matrix3f> eigen_solver(covariance);
+    Eigen::Vector3f normal = eigen_solver.eigenvectors().col(
+        0);  // 最小特征值对应的特征向量就是法向量
+
+    // 平面方程的系数 ax + by + cz + d = 0
+    float d = -normal.dot(centroid.head<3>());
+    return Eigen::Vector4f(normal[0], normal[1], normal[2], d);
+}
+
+// 输出平面系数
+void printPlaneCoefficients(const std::string& method_name,
+                            const Eigen::Vector4f& coefficients)
+{
+    std::cout << method_name << " Plane coefficients: " << coefficients[0]
+              << " " << coefficients[1] << " " << coefficients[2] << " "
+              << coefficients[3] << std::endl;
 }

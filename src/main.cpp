@@ -11,6 +11,9 @@
 #include <cmath>   // 用于计算平方根等数学操作
 #include <iostream>
 #include "utils.h"
+#include <pcl/common/common.h>
+#include <pcl/point_types.h>
+#include <pcl/point_cloud.h>
 
 int main(int argc, char** argv)
 {
@@ -68,7 +71,6 @@ int main(int argc, char** argv)
     std::cout << "Loading time: "
               << duration_cast<milliseconds>(end_load - start_load).count()
               << " ms" << std::endl;
-
     std::cout << "PointCloud before conversion: "
               << cloud_original->points.size() << " points." << std::endl;
 
@@ -83,21 +85,14 @@ int main(int argc, char** argv)
     //     << duration_cast<milliseconds>(end_convert - start_convert).count()
     //     << " ms" << std::endl;
 
-    //     //! 按z轴过滤点云
-    //     pcl::PointCloud<pcl::PointXYZ>::Ptr cloud(
-    //         new pcl::PointCloud<pcl::PointXYZ>);
-    //     filterZAxis(cloud_original, 0.675, 0.70,
-    //                 cloud);  // 例如保留 z 值在 [0, 1] 范围内的点
-    // #ifdef OUTPUT_RESULTS
-    //     SavePointCloud(cloud, "cloud_after_z");
-    // #endif
+    //! 按z轴过滤点云
     pcl::PointCloud<pcl::PointXYZ>::Ptr cloud(
         new pcl::PointCloud<pcl::PointXYZ>);
     pcl::PassThrough<pcl::PointXYZ> pass;
     pass.setInputCloud(cloud_original);
     pass.setFilterFieldName("z");
-    // pass.setFilterLimits(0.6750, 0.7000);
-    pass.setFilterLimits(675.0, 700.0);
+    // pass.setFilterLimits(0.6750, 0.7000);//if m
+    pass.setFilterLimits(675.0, 700.0);  // if mm
     pass.setNegative(false);
     pass.filter(*cloud);
 
@@ -144,47 +139,64 @@ int main(int argc, char** argv)
     Eigen::Vector3f centroid_vec(centroid[0], centroid[1], centroid[2]);
     pcl::PointXYZ centroid_point(centroid[0], centroid[1], centroid[2]);
 
-    // 设置平面分割器 //todo 暂没用到
-    auto start_seg = high_resolution_clock::now();  // 记录开始时间
-    pcl::SACSegmentation<pcl::PointXYZ> seg;
-    pcl::PointIndices::Ptr inliers(new pcl::PointIndices);
-    pcl::ModelCoefficients::Ptr coefficients(new pcl::ModelCoefficients);
-    seg.setOptimizeCoefficients(true);
-    seg.setModelType(pcl::SACMODEL_PLANE);
-    seg.setMethodType(pcl::SAC_RANSAC);
-    seg.setDistanceThreshold(0.001);
+    // 拟合平面
+    //  计时并使用RANSAC拟合平面
+    auto start_ransac = std::chrono::high_resolution_clock::now();
+    Eigen::Vector4f plane_coefficients_ransac = fitPlaneRANSAC(cloud);
+    auto end_ransac = std::chrono::high_resolution_clock::now();
+    std::chrono::duration<double> duration_ransac = end_ransac - start_ransac;
+    printPlaneCoefficients("RANSAC", plane_coefficients_ransac);
 
-    seg.setInputCloud(cloud);
-    seg.segment(*inliers, *coefficients);
-    auto end_seg = high_resolution_clock::now();  // 记录结束时间
+    // 计时并使用最小二乘法拟合平面
+    auto start_least_squares = std::chrono::high_resolution_clock::now();
+    Eigen::Vector4f plane_coefficients_least_squares =
+        fitPlaneLeastSquares(cloud);
+    auto end_least_squares = std::chrono::high_resolution_clock::now();
+    std::chrono::duration<double> duration_least_squares =
+        end_least_squares - start_least_squares;
+    printPlaneCoefficients("Least Squares", plane_coefficients_least_squares);
 
-    if (inliers->indices.size() == 0)
-    {
-        PCL_ERROR("Could not estimate a planar model for the given dataset.");
-        return -1;
-    }
-
-    std::cout << "Segmentation time: "
-              << duration_cast<milliseconds>(end_seg - start_seg).count()
-              << " ms" << std::endl;
-
-    // 打印平面模型
-    std::cout << "Model coefficients: ";
-    for (auto val : coefficients->values) std::cout << val << " ";
-    std::cout << std::endl;
-// todo  有问题
 #ifdef OUTPUT_RESULTS
+    // 计算误差
+    double ransac_error = calculateError(cloud, plane_coefficients_ransac);
+    double least_squares_error =
+        calculateError(cloud, plane_coefficients_least_squares);
+    std::cout << "RANSAC MSE: " << ransac_error
+              << ", Time: " << duration_ransac.count() << " seconds"
+              << std::endl;
+    std::cout << "Least Squares MSE: " << least_squares_error
+              << ", Time: " << duration_least_squares.count() << " seconds"
+              << std::endl;
 
-    Eigen::Vector3f normal(coefficients->values[0], coefficients->values[1],
-                           coefficients->values[2]);
-    ShowPlane(centroid_point, coefficients, "coefficients", 1.0f, 100);
-    ShowVector(normal, "normal", centroid_vec, 1.0f);  //! if m  if mm
+    // 动态计算包围盒的尺寸
+    Eigen::Vector4f min_pt, max_pt;
+    pcl::getMinMax3D(*cloud, min_pt, max_pt);
+    float box_size_x = max_pt[0] - min_pt[0];
+    float box_size_y = max_pt[1] - min_pt[1];
+    float box_size_z = max_pt[2] - min_pt[2];
+    // 使用包围盒的最大维度作为 plane_size
+    float plane_size = std::max({box_size_x, box_size_y, box_size_z});
 
-#endif
+    // 可视化结果
+    ShowPlane(centroid_point, plane_coefficients_ransac, "coe_plane_ransac",
+              plane_size);
+    ShowPlane(centroid_point, plane_coefficients_least_squares, "coe_plane_ls",
+              plane_size);
+    Eigen::Vector3f normal(plane_coefficients_ransac[0],
+                           plane_coefficients_ransac[1],
+                           plane_coefficients_ransac[2]);
+    ShowVector(normal, "normal", centroid_vec, plane_size);  //! if m  if mm
 
     // 计算质心到拟合平面的距离
-    double distance = computePointToPlaneDistance(centroid, coefficients);
-    std::cout << "Distance from centroid to plane: " << distance << std::endl;
+    double distance =
+        computePointToPlaneDistance(centroid, plane_coefficients_ransac);
+    std::cout << "Distance from centroid to plane_ransac: " << distance
+              << std::endl;
+    double distance1 =
+        computePointToPlaneDistance(centroid, plane_coefficients_least_squares);
+    std::cout << "Distance from centroid to plane_ls: " << distance1
+              << std::endl;
+#endif
 
     //! 体素下采样
     auto start_downsample = high_resolution_clock::now();  // 记录开始时间
