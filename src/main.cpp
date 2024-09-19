@@ -37,6 +37,35 @@ int main(int argc, char** argv)
     FLAGS_colorlogtostderr = true;
     FLAGS_log_dir          = "./";
 
+    //! cam2base变换矩阵
+    // todo 直接先算好
+    //  工具到相机的变换 (平移和欧拉角)
+    Eigen::Vector3f translation_TC(46.307365116896307, 83.64781988216231,
+                                   -270.34468528536888);
+    Eigen::Vector3f euler_TC(0.050761172951085926, 0.0047434909777201821,
+                             -1.5778546245587957);  //  (ZYX顺序欧拉角)
+    // 工具到基坐标系的变换 (平移和四元数)
+    Eigen::Vector3f translation_TB(2077, 689.31,
+                                   1405.42);  // 工具到基坐标系的平移
+    Eigen::Quaternionf quat_TB(0.00392, 0.91621, -0.40062,
+                               -0.00601);  // 工具到基坐标系的旋转 (四元数)
+
+    // 保存相机到基坐标系的平移和旋转
+    Eigen::Vector3f translation_CB;
+    Eigen::Quaternionf quat_CB;
+
+    // 计算相机到基坐标系的变换
+    computeCameraToBaseTransform(translation_TC, euler_TC, translation_TB,
+                                 quat_TB, translation_CB, quat_CB);
+
+    // 变换矩阵 cam2base
+    Eigen::Isometry3f cam2base = Eigen::Isometry3f::Identity();
+    cam2base.rotate(quat_CB);
+    // translation_CB = translation_CB / 1000;  //! 转换为m
+    // 不转化为m
+    translation_CB = translation_CB;
+    cam2base.pretranslate(translation_CB);
+
     //! 加载点云数据
     auto start_load = high_resolution_clock::now();  // 记录开始时间
     pcl::PointCloud<pcl::PointXYZ>::Ptr cloud_original(
@@ -86,6 +115,8 @@ int main(int argc, char** argv)
     //     << " ms" << std::endl;
 
     //! 按z轴过滤点云
+    // todo 相机z会动态变换，base下z相对固定
+    auto start = std::chrono::high_resolution_clock::now();
     pcl::PointCloud<pcl::PointXYZ>::Ptr cloud(
         new pcl::PointCloud<pcl::PointXYZ>);
     pcl::PassThrough<pcl::PointXYZ> pass;
@@ -95,41 +126,24 @@ int main(int argc, char** argv)
     pass.setFilterLimits(675.0, 700.0);  // if mm
     pass.setNegative(false);
     pass.filter(*cloud);
+    auto end = std::chrono::high_resolution_clock::now();
+    std::chrono::duration<double> e_s = end - start;
 
-    // todo 检测砖块点云
-    //     //! 将点云分割为4cm厚度的层
-    //     // 假设高度有1米
-    //     int slicing_num = 1.0 / 0.04;
-    //     pcl::PointCloud<pcl::PointXYZ>::Ptr slicing_cloud[slicing_num];
-    //     for (auto& a : slicing_cloud)
-    //     {
-    //         a = pcl::PointCloud<pcl::PointXYZ>::Ptr(
-    //             new pcl::PointCloud<pcl::PointXYZ>);
-    //     }
-    //     for (unsigned int i = 0; i < cloud_in_base->size(); i++)
-    //     {
-    //         const pcl::PointXYZ& Point = cloud_in_base->points[i];
-    //         int s = std::floor((cloud_in_base_maxv.z - Point.z) / 0.04);
-    //         // LOG(INFO) << "s:" << cloud_in_rotated_min;
-    //         if (s < slicing_num - 1)
-    //         {
-    //             slicing_cloud[s]->points.push_back(Point);
-    //         }
-    //     }
-
-    // //! 调试 保存每一层的点云数据
-    // #ifdef OUTPUT_RESULTS
-    //     for (int i = 0; i < slicing_num; i++)
-    //     {
-    //         if (slicing_cloud[i]->size() > 0)
-    //         {  // 确保点云层不是空的
-    //             std::ostringstream oss;
-    //             oss << "slicing_cloud_layer_" << (i + 1);  //
-    //             创建文件名，包含层编号 SavePointCloud(slicing_cloud[i],
-    //             oss.str());
-    //         }
-    //     }
-    // #endif
+    //! cloud_in_base(下采样后)
+    start = std::chrono::high_resolution_clock::now();
+    pcl::PointCloud<pcl::PointXYZ>::Ptr cloud_in_base(
+        new pcl::PointCloud<pcl::PointXYZ>);
+    pcl::transformPointCloud(*cloud, *cloud_in_base, cam2base.cast<float>());
+    cloud_in_base->width  = cloud_in_base->size();
+    cloud_in_base->height = 1;
+    LOG(INFO) << "cloud_in_base->points.size: " << cloud_in_base->points.size();
+    std::cout << " cloud_in_base->points.size: " << cloud_in_base->points.size()
+              << std::endl;
+    end = std::chrono::high_resolution_clock::now();
+    e_s = end - start;
+#ifdef OUTPUT_RESULTS
+    SavePointCloud(cloud_in_base, "cloud_in_base");
+#endif
 
     //! 计算点云中心点
     Eigen::Vector4f centroid;
@@ -223,7 +237,7 @@ int main(int argc, char** argv)
     feature_extractor.getEigenVectors(major_vector, middle_vector,
                                       minor_vector);
     auto end_features = high_resolution_clock::now();  // 记录结束时间
-
+#ifdef OUTPUT_RESULTS
     std::cout
         << "Feature extraction time: "
         << duration_cast<milliseconds>(end_features - start_features).count()
@@ -239,59 +253,20 @@ int main(int argc, char** argv)
 
     std::cout << "Minor eigenvector: [" << minor_vector[0] << ", "
               << minor_vector[1] << ", " << minor_vector[2] << "]" << std::endl;
-
-    Eigen::Matrix3f rotation_matrix;
-    rotation_matrix.col(0) = major_vector;
-    rotation_matrix.col(1) = middle_vector;
-    rotation_matrix.col(2) = minor_vector;
-    Eigen::Quaternionf quat(rotation_matrix);
-
+    Eigen::Matrix3f R;
+    R.col(0) = major_vector;
+    R.col(1) = middle_vector;
+    R.col(2) = minor_vector;
+    Eigen::Quaternionf quat(R);
     // 保存质心和位姿
     ShowPointQuat(centroid_point, quat, "pose_camera");
-
-    //! 坐标系转换--------------------------
-    // 工具到相机的变换 (平移和欧拉角)
-    Eigen::Vector3f translation_TC(46.307365116896307, 83.64781988216231,
-                                   -270.34468528536888);
-    Eigen::Vector3f euler_TC(0.050761172951085926, 0.0047434909777201821,
-                             -1.5778546245587957);  //  (ZYX顺序欧拉角)
-
-    // 工具到基坐标系的变换 (平移和四元数)
-    Eigen::Vector3f translation_TB(2077, 689.31,
-                                   1405.42);  // 工具到基坐标系的平移
-    Eigen::Quaternionf quat_TB(0.00392, 0.91621, -0.40062,
-                               -0.00601);  // 工具到基坐标系的旋转 (四元数)
-
-    // 保存相机到基坐标系的平移和旋转
-    Eigen::Vector3f translation_CB;
-    Eigen::Quaternionf quat_CB;
-
-    // 计算相机到基坐标系的变换
-    computeCameraToBaseTransform(translation_TC, euler_TC, translation_TB,
-                                 quat_TB, translation_CB, quat_CB);
-
-    // 打印最终结果
-    std::cout << "最终相机到基坐标系的平移: " << translation_CB.transpose()
-              << std::endl;
-    //! 打印是x y z w
-    std::cout << "最终相机到基坐标系的旋转 (四元数): "
-              << quat_CB.coeffs().transpose() << std::endl;
-    //! 坐标系转换----------------------------------------
-
-    // 变换矩阵 //todo 重命名
-    Eigen::Isometry3f camera_calibrate_ = Eigen::Isometry3f::Identity();
-    camera_calibrate_.rotate(quat_CB);
-    // translation_CB = translation_CB / 1000;  //! 转换为m
-    // 不转化为m
-    translation_CB = translation_CB;
-    camera_calibrate_.pretranslate(translation_CB);
+#endif
 
     //! 在base下的质心和位姿
-    Eigen::Vector3f centroid_base =
-        camera_calibrate_ * centroid_vec;           // 质心转换
-    Eigen::Quaternionf quat_base = quat_CB * quat;  // 姿态转换
-    std::cout << "camera_calibrate_ matrix:" << std::endl;
-    std::cout << camera_calibrate_.matrix() << std::endl;
+    Eigen::Vector3f centroid_base = cam2base * centroid_vec;  // 质心转换
+    Eigen::Quaternionf quat_base  = quat_CB * quat;           // 姿态转换
+    std::cout << "cam2base matrix:" << std::endl;
+    std::cout << cam2base.matrix() << std::endl;
     std::cout << "center point  in base : " << centroid_base.transpose()
               << std::endl;
     std::cout << " orientation in base (quaternion x y z w): "
@@ -305,10 +280,10 @@ int main(int argc, char** argv)
 
     //! 根据需求调整位姿，绕z方向旋转多少度
     // 先计算当前的旋转矩阵
-    Eigen::Matrix3f rotation_matrix1 = quat_base.toRotationMatrix();
+    Eigen::Matrix3f R1 = quat_base.toRotationMatrix();
 
     // 提取当前的Z方向向量作为旋转轴
-    Eigen::Vector3f z_direction = rotation_matrix1.col(2);  // Z方向向量
+    Eigen::Vector3f z_direction = R1.col(2);  // Z方向向量
 
     // 创建绕当前Z方向旋转90度的旋转矩阵
     float angle = M_PI / 2;  // 90度 = pi/2 弧度  //todo
@@ -317,16 +292,15 @@ int main(int argc, char** argv)
         Eigen::AngleAxisf(angle, z_direction.normalized());
 
     // 将绕Z方向的旋转矩阵与当前的旋转矩阵相乘
-    Eigen::Matrix3f new_rotation_matrix =
-        rotation_around_z_direction * rotation_matrix1;
+    Eigen::Matrix3f new_R = rotation_around_z_direction * R1;
 
     // 将更新后的旋转矩阵转换回四元数
-    Eigen::Quaternionf new_quat(new_rotation_matrix);
+    Eigen::Quaternionf new_quat(new_R);
 
     // 输出新的姿态方向向量
-    Eigen::Vector3f new_x_direction = new_rotation_matrix.col(0);  // x方向向量
-    Eigen::Vector3f new_y_direction = new_rotation_matrix.col(1);  // y方向向量
-    Eigen::Vector3f new_z_direction = new_rotation_matrix.col(2);  // z方向向量
+    Eigen::Vector3f new_x_direction = new_R.col(0);  // x方向向量
+    Eigen::Vector3f new_y_direction = new_R.col(1);  // y方向向量
+    Eigen::Vector3f new_z_direction = new_R.col(2);  // z方向向量
 
     // 输出结果
     std::cout << "New orientation in base (quaternion x y z w): "
@@ -341,21 +315,6 @@ int main(int argc, char** argv)
 
 #ifdef OUTPUT_RESULTS
     ShowPointQuat(centroid_p_base, new_quat, "new_pose_base");
-#endif
-
-    //! cloud_in_base(下采样后)
-    pcl::PointCloud<pcl::PointXYZ>::Ptr cloud_in_base(
-        new pcl::PointCloud<pcl::PointXYZ>);
-    pcl::transformPointCloud(*cloud, *cloud_in_base,
-                             camera_calibrate_.cast<float>());
-    cloud_in_base->width  = cloud_in_base->size();
-    cloud_in_base->height = 1;
-    LOG(INFO) << "cloud_in_base->points.size: " << cloud_in_base->points.size();
-    std::cout << " cloud_in_base->points.size: " << cloud_in_base->points.size()
-              << std::endl;
-
-#ifdef OUTPUT_RESULTS
-    SavePointCloud(cloud_in_base, "cloud_in_base");
 #endif
 
     // 记录程序总结束时间

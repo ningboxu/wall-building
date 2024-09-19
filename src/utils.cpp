@@ -482,7 +482,7 @@ void computeCameraToBaseTransform(
     // 打印信息
     std::cout << "相机到基坐标系的平移: " << translation_CB.transpose()
               << std::endl;
-    std::cout << "相机到基坐标系的旋转 (四元数): "
+    std::cout << "相机到基坐标系的旋转 (四元数x y z w): "
               << quat_CB.coeffs().transpose() << std::endl;
 }
 
